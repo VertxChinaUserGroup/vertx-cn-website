@@ -31,9 +31,10 @@ module.exports = {
   },
   rules: {
     'array-bracket-spacing': 2,
-    'babel/object-curly-spacing': 2,
+    'babel/object-curly-spacing': [2, 'always'],
     'computed-property-spacing': 2,
-    'eol-last': 2,
+    'eol-last': 0,
+    'no-unused-vars': 1,
     'flowtype/no-types-missing-file-annotation': 0,
     'generator-star-spacing': 2,
     'max-depth': 2,
@@ -45,7 +46,7 @@ module.exports = {
     'max-nested-callbacks': 2,
     'max-params': [2, 5],
     'no-mixed-operators': 0,
-    'object-curly-spacing': 0,
+    'object-curly-spacing': [2, 'always'],
     'standard/no-callback-literal': 0,
     'prefer-const': [2, {
       destructuring: 'all'
