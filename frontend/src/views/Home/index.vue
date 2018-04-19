@@ -6,7 +6,7 @@
     Button(type='primary' @click='test') http
 </template>
 <script>
-  import { testHttp } from '../../api'
+  import { testHttp } from '@/api'
   export default {
     data() {
       return {

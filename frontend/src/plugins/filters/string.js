@@ -1,1 +1,1 @@
-export {hide, leftPad, reverse} from 'utils'
+export { hide, leftPad, reverse } from 'utils'

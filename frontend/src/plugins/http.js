@@ -10,12 +10,8 @@ const PERMISSION_DENIED = () => Message.warning('您没有该资源的访问权�
 
 const HANDLER = {
   401: PERMISSION_DENIED,
-  404: () => {
-    Message.warning('未找到匹配的 url 请求!')
-  },
-  500: () => {
-    Message.warning('系统异常，请稍后重试！')
-  }
+  404: () => Message.warning('未找到匹配的 url 请求!'),
+  500: () => Message.warning('系统异常，请稍后重试！')
 }
 
 const service = axios.create({
@@ -37,6 +33,7 @@ const requestInterceptor = config => {
 const responseInterceptor = response => {
   // 此处可根据后端自定义 code 来拦截
   const { data, code } = response
+
   setProgress(100)
 
   return Promise.resolve(data)

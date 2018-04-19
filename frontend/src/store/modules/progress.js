@@ -11,7 +11,7 @@ const getters = generateGetters('progress')
 let timeout
 
 const actions = {
-  setProgress({commit}, progress) {
+  setProgress({ commit }, progress) {
     clearTimeout(timeout)
     commit(SET_PROGRESS, progress)
     if (progress !== 100) return
