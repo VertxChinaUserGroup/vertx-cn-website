@@ -1,0 +1,36 @@
+{
+  "presets": [
+    "env",
+    "stage-0"
+  ],
+  "plugins": [
+    "add-module-exports",
+    "syntax-flow",
+    "transform-flow-strip-types"
+  ],
+  "comments": false,
+  "passPerPreset": true,
+  "env": {
+    "development": {
+      "plugins": [
+        [
+          "flow-runtime",
+          {
+            "assert": true,
+            "annotate": true
+          }
+        ]
+      ]
+    },
+    "testing": {
+      "plugins": [
+        [
+          "__coverage__",
+          {
+            "ignore": "test/"
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,52 @@
+@require "transition"
+
+::-webkit-scrollbar
+  size 0
+  display none
+  background transparent
+
+*
+  user-select none
+
+input, textarea, [contenteditable], [contenteditable] *
+  user-select text
+
+body
+  font-hei()
+
+:root, body, #app
+  height 100%
+
+.scroll
+  scrollSmooth()
+
+.scroll-x
+  scrollSmooth(true)
+
+#app
+  relative()
+  max-width 1024px
+  margin-left auto
+  margin-right auto
+
+a
+  &, &:active, &:hover, &:visited
+    color inherit
+    text-decoration none
+
+// @stylint off
+input
+  placeholder(color $placeholder-color,)
+  &,
+  &::-webkit-inner-spin-button,
+  &::-webkit-outer-spin-button
+    appearance none
+
+.mask
+  fixed(top right bottom left)
+  z-index 500
+  background-color $stress-color
+  opacity .5
+
+  &.transparent
+    opacity 0

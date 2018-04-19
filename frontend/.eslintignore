@@ -1,0 +1,6 @@
+dist
+sync
+coverage
+node_modules
+src/external/jquery-3.2.1.min.js
+act-dist

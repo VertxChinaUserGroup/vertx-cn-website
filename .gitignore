@@ -1,0 +1,5 @@
+frontend/.vscode
+frontend/node_modules
+frontend/.idea
+frontend/*.log
+frontend/dist
