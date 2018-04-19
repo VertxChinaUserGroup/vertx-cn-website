@@ -1,0 +1,135 @@
+@require "~nib/lib/nib/image"
+@require "~nib/lib/nib/overflow"
+@require "~nib/lib/nib/positions"
+@require "~nib/lib/nib/text"
+@require "~nib/lib/nib/size"
+@require "~fonts.css/fonts"
+// @require "~stylus-pxtorem/index" if you want to use px2rem, add it
+@require "mixin"
+
+$threshold = 768px
+$app-base = 375px
+$card-white = #fefefe
+
+/**
+ * 背景色
+ */
+$bg-color = #f8f8f8
+
+/** 输入框边框、列表分割线
+ *  登录输入、数据录入时正常状态时的边框
+ *  会员列表、老师列表、个人信息列表等页面的颜色
+ */
+$placeholder-color = $input-border-color = $list-line-color = $icon-color = #d0d0d0
+
+/** 虚线分割
+ *  用于卡片列表式的列表里面的分割
+ */
+$dashed-line-color = #c2c2c2
+
+/** 卡片内部分割线、背景色
+ *  用于卡片列表里面的分割线和背景
+ */
+$card-line-color = #f1f1f1
+
+/** 强调标题文本
+ *  标题类型的文本信息，一般放在一级标题或者开头的地方,列表的标题就是用此颜色
+ */
+$stress-color = #000
+
+/**
+ * 一般强调性文本
+ */
+$stress-lighter-color = #999
+
+/** 反色、背景色
+ *  目前为白色
+ */
+$reverse-color = $back-light-color = #fff
+
+/** 主体内容性文本
+ *  一级标题下面的主体内容文字，使用面积略大
+ */
+$primary-color = #555
+
+/** 主体内容性次级文本，叙述性文本
+ *  一级标题下面的叙述性内容文字,次于主体内容，使用面积略大
+ */
+$subtext-color = #808080
+
+/**
+ *  主体默认颜色
+ */
+$default-color = #333
+
+/** 备注和非强调性文本
+ *  备注信息文字和不可用状态
+ */
+$remark-color = #b7b7b7
+
+/**
+ * 浅色备注信息，主要用于导航图标
+ */
+$remark-lighter-color = #ccc
+
+/* 其他 */
+$back-color = #e5e5e5
+
+/** 报错文字和特殊强调文本
+ *  用于报错信息的文本和特殊强调的文本，范围不是很大
+ */
+$highlight-color = #fb351b
+$new-message-bg = #ff0000
+
+/**
+ * 下边框阴影
+ */
+$bottom-shadow = 0 1px 1px rgba(0, 0, 0, .05)
+
+/**
+ * 警示标题背景颜色
+ */
+$reminder-color = #feedc3
+
+/**
+ * 警示标题字颜色
+ */
+$reminder-font-color = #4d4d4d
+
+$top-size = 36px
+
+/** 强调标题
+ *  用于一级按钮或者卡片大标题
+ */
+$stress-size = 18px
+
+/** 一级内容
+ *  页面内普通的一级标题内容
+ */
+$primary-size = 16px
+
+/** 二级内容
+ *  普通中文二级文字
+ */
+$common-size = 14px
+
+/** 小号文字
+ *  11、12、13px 字号无法直接使用（考虑rem + 小屏手机）
+ *  因为浏览器不支持这么小的字号，这里只是作为展示字号
+ *  需要自行通过类似 `font-size 16px; transform: scale(11/16);` 的方式实现
+ */
+
+/** 三级内容
+ *  正文三级文字
+ */
+$small-size = 13px
+
+$smaller-size = 12px
+
+/** 小号备注内容
+ *  一般注释性文字，非重要又不可缺少性内容
+ */
+$tiny-size = 11px
+
+$tinier-size = 10px
+

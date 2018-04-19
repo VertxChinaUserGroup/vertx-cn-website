@@ -1,0 +1,46 @@
+{
+  "presets": [
+    [
+      "env",
+      {
+        "targets": {
+          "ie": 9,
+          "safari": 7
+        }
+      }
+    ],
+    "stage-0"
+  ],
+  "plugins": [
+    "add-module-exports",
+    "dynamic-import-webpack",
+    "syntax-flow",
+    "transform-flow-strip-types",
+    "transform-vue-jsx"
+  ],
+  "comments": false,
+  "passPerPreset": true,
+  "env": {
+    "development": {
+      "plugins": [
+        [
+          "flow-runtime",
+          {
+            "assert": true,
+            "annotate": true
+          }
+        ]
+      ]
+    },
+    "testing": {
+      "plugins": [
+        [
+          "__coverage__",
+          {
+            "ignore": "test/"
+          }
+        ]
+      ]
+    }
+  }
+}

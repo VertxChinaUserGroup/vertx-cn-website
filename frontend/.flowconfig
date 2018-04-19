@@ -1,0 +1,15 @@
+[ignore]
+.*/node_modules/.*
+.*/test/.*
+.*/build/.*
+.*/dist/.*
+.*/coverage/.*
+
+[include]
+.*/src/.*
+
+[libs]
+src/flow
+
+[options]
+unsafe.enable_getters_and_setters=true
