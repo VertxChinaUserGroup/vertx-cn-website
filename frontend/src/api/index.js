@@ -1,8 +1,8 @@
-import http from '../plugins/http'
+import http from '@/plugins/http'
 
 export const testHttp = () => {
-    return http({
-        url: '/nothing',
-        method: 'get',
-    })
+  return http({
+    url: '/nothing',
+    method: 'get'
+  })
 }

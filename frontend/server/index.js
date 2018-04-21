@@ -7,9 +7,7 @@ import config from '../build/config'
 import error from './error'
 import history from './history'
 import dev from './dev-tools'
-import {argv} from 'yargs'
-
-const proxies = require('koa-proxies')
+import { argv } from 'yargs'
 
 const debug = _debug('vertx:server')
 

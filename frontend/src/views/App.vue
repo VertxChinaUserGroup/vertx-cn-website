@@ -3,11 +3,9 @@
     img(:src="img")
     router-view(transition="fade")
 
-    loading(v-if="progress", :progress="progress")
 </template>
 <script>
   import { mapGetters } from 'vuex'
-  import Loading from 'components/Widgets/Loading'
 
   export default {
     name: 'app',
@@ -19,8 +17,11 @@
         img: require('assets/logo.png')
       }
     },
-    components: {
-      Loading
+    watch: {
+      progress(value) {
+        if(value === 50) this.$Loading.start()
+        if(!value) this.$Loading.finish()
+      }
     }
   }
 </script>

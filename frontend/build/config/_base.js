@@ -1,5 +1,5 @@
 import path from 'path'
-import {argv} from 'yargs'
+import { argv } from 'yargs'
 import _debug from 'debug'
 
 const debug = _debug('vertx:config:base')
@@ -46,7 +46,8 @@ const config = {
     chunkModules: false
   },
   compiler_alias: {
-    vue: 'vue/dist/vue.common'
+    vue: 'vue/dist/vue.common',
+    '@': path.resolve(__dirname, '../../', 'src')
   },
   compiler_vendor: [
     'axios',
@@ -91,7 +92,7 @@ config.globals = {
 // Validate Vendor Dependencies 检查 vendors 依赖
 // ------------------------------------
 config.compiler_vendor = config.compiler_vendor
-  .filter(dep => ({...config.pkg.dependencies, ...config.compiler_alias}.hasOwnProperty(dep) ? true : debug(
+  .filter(dep => ({ ...config.pkg.dependencies, ...config.compiler_alias }.hasOwnProperty(dep) ? true : debug(
     'Package "' + dep + '" was not found as an npm dependency in package.json; ' +
     'it won\'t be included in the webpack vendor bundle.\n' +
     'Consider removing it from compiler_vendor in "./config/_base.js"'

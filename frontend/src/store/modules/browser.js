@@ -22,8 +22,8 @@ const getters = {
 }
 
 const actions = {
-  setSize({commit}, {winHeight, winWidth}) {
-    const size = {winHeight, winWidth}
+  setSize({ commit }, { winHeight, winWidth }) {
+    const size = { winHeight, winWidth }
     const baseWidth = state.baseWidth
     size.dpi = window.devicePixelRatio
     const mode = size.mode = winWidth < state.threshold

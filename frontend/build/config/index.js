@@ -1,6 +1,6 @@
 import fs from 'fs'
 import _debug from 'debug'
-import config, {env} from './_base'
+import config, { env } from './_base'
 
 const debug = _debug('vertx:config')
 debug('Create configuration.')
@@ -24,4 +24,4 @@ if (hasOverridesFile) {
   debug(`No configuration overrides found for NODE_ENV "${env}"`)
 }
 
-export default {...config, ...overrides}
+export default { ...config, ...overrides }

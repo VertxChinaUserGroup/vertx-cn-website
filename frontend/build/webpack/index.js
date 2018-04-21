@@ -4,7 +4,7 @@ import ExtractTextPlugin from 'extract-text-webpack-plugin'
 import HtmlWebpackPlugin from 'html-webpack-plugin'
 import _debug from 'debug'
 import pug from 'pug'
-import config, {globals, paths} from '../config'
+import config, { globals, paths } from '../config'
 import {
   commonCssLoaders,
   cssModuleOptions,
@@ -15,7 +15,7 @@ import {
   vueCssLoaders
 } from './utils'
 
-const {NODE_ENV, __DEV__, __TEST__, __PROD__, __MOCK__} = globals
+const { NODE_ENV, __DEV__, __TEST__, __PROD__, __MOCK__ } = globals
 
 const debug = _debug('vertx:webpack:config')
 
@@ -105,7 +105,7 @@ webpackConfig.module.rules = [
     include: nodeModules
   }, {
     test: /\.stylus$/,
-    loader: generateLoaders(STYLUS_LOADER, baseLoaders, {style: false})
+    loader: generateLoaders(STYLUS_LOADER, baseLoaders, { style: false })
   }, {
     test: /\.js$/,
     loader: 'babel-loader?cacheDirectory',

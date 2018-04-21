@@ -1,10 +1,10 @@
 import ExtractTextPlugin from 'extract-text-webpack-plugin'
 import _debug from 'debug'
-import {argv} from 'yargs'
+import { argv } from 'yargs'
 
-import config, {globals} from '../config'
+import config, { globals } from '../config'
 
-const {__TEST__, __PROD__, __PAGES__} = globals
+const { __TEST__, __PROD__, __PAGES__ } = globals
 
 const sourceMap = !!config.compiler_devtool
 const browsers = config.compiler_browsers
