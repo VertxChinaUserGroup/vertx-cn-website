@@ -14,7 +14,7 @@ input, textarea, [contenteditable], [contenteditable] *
 body
   font-hei()
 
-:root, body, #app
+:root
   height 100%
 
 .scroll
@@ -25,7 +25,6 @@ body
 
 #app
   relative()
-  max-width 1024px
   margin-left auto
   margin-right auto
 
@@ -36,7 +35,7 @@ a
 
 // @stylint off
 input
-  placeholder(color $placeholder-color,)
+  placeholder(color $placeholder-color)
   &,
   &::-webkit-inner-spin-button,
   &::-webkit-outer-spin-button

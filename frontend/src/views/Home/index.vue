@@ -2,8 +2,8 @@
   div(:class="$style.container")
     h3 vertx china
     h3 Hello! your name is {{ username }} now.
-    h3 You can refresh your web page to change your name with mock
-    Button(type='primary' @click='test') http
+    Button(type='primary' @click='mock') mock
+    Button(type='primary' @click='http') 404
 </template>
 <script>
   import { testHttp } from '@/api'
@@ -13,13 +13,13 @@
         username: ''
       }
     },
-    async created() {
-      const data = (await this.$http.post('/get-home-data'))
-      Object.assign(this, data)
-    },
     methods: {
-      test() {
+      http() {
         testHttp()
+      },
+      async mock() {
+        const data = (await this.$http.post('/get-home-data'))
+        Object.assign(this, data)
       }
     }
   }
