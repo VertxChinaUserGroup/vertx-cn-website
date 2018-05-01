@@ -1,17 +1,20 @@
 <template lang="pug">
   #app(:class="$style.container")
-    img(:src="img")
-    router-view(transition="fade")
+    Navbar
+    div(:class="$style.main")
+      router-view(transition="fade")
 
 </template>
 <script>
   import { mapGetters } from 'vuex'
+  import Navbar from '@/views/Navbar'
 
   export default {
     name: 'app',
     computed: {
       ...mapGetters(['progress'])
     },
+    components: { Navbar },
     data() {
       return {
         img: require('assets/logo.png')
@@ -19,8 +22,8 @@
     },
     watch: {
       progress(value) {
-        if(value === 50) this.$Loading.start()
-        if(!value) this.$Loading.finish()
+        if (value === 50) this.$Loading.start()
+        if (!value) this.$Loading.finish()
       }
     }
   }
@@ -32,5 +35,7 @@
     -moz-osx-font-smoothing grayscale
     text-align center
     color #2c3e50
-    margin-top: 60px
+
+  .main
+    margin-top 52px
 </style>
