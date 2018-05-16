@@ -1,0 +1,10 @@
+{
+  /* 索引位置*/
+    "indexPath":"/Users/leibnizhu/Desktop/Index",
+  /*文章原始文件位置*/
+    "articlePath":"/Users/leibnizhu/Desktop/Data",
+    /*从articlePath更新索引的时间间隔,单位:秒*/
+    "refreshIndexPerSecond": 10,
+    /*服务端口*/
+    "serverPort": 8083
+}
