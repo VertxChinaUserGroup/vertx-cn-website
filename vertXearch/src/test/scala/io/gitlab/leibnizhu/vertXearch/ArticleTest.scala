@@ -2,10 +2,11 @@ package io.gitlab.leibnizhu.vertXearch
 
 import java.io.File
 
-import io.vertx.core.Future
 import io.vertx.scala.core.{CompositeFuture, Vertx}
 import org.scalatest.FunSuite
 import org.slf4j.LoggerFactory
+
+import scala.util.{Failure, Success}
 
 
 class ArticleTest extends FunSuite {
@@ -31,12 +32,11 @@ class ArticleTest extends FunSuite {
     val context = Vertx.vertx().getOrCreateContext()
     context.config().get.put("articlePath", dataPath)
     Constants.init(context)
-    source.foreach(article => article.writeToFile(ar => {
-      if (ar.succeeded()) {
+    source.foreach(article => article.writeToFile({
+      case Success(_ß) =>
         log.info(s"写入文章(ID=${article.id}, 标题=${article.title})成功")
-      } else {
-        log.info("写入失败:" + ar.cause().getMessage)
-      }
+      case Failure(cause) =>
+        log.info("写入失败:" + cause.getMessage)
     }))
   }
 

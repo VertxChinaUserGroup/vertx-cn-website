@@ -7,16 +7,19 @@ import io.vertx.core.buffer.Buffer
 import io.vertx.core.{AsyncResult, Future, Handler}
 import org.slf4j.LoggerFactory
 
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Failure, Success, Try}
+
 case class Article(id: String, title: String, author: String, content: String) {
   /**
     * 将Article对象写入到文件,目录由配置文件指定
     *
     * @param callback 写入到文件之后的回调,无传入结果
     */
-  def writeToFile(callback: Handler[AsyncResult[Unit]]): Unit = {
+  def writeToFile(callback: Try[Unit] => Unit): Unit = {
     val fileName = Constants.articlePath() + "/" + this.id + ".txt"
     val fileContent = this.title + LINE_SEPARATOR + this.author + LINE_SEPARATOR + this.content
-    Constants.vertx.fileSystem().writeFile(fileName, Buffer.buffer(fileContent), callback)
+    Constants.vertx.fileSystem().writeFileFuture(fileName, Buffer.buffer(fileContent)).onComplete(callback)
   }
 }
 
@@ -30,16 +33,15 @@ object Article {
     * @param handler 读取文章之后的回调,传入解析到的Article
     */
   def fromFile(file: File, handler: Handler[AsyncResult[Article]]): Unit = {
-    vertx.fileSystem().readFile(file.getAbsolutePath, res => {
-      if (res.succeeded()) {
-        val article = parse(file, res.result())
+    vertx.fileSystem().readFileFuture(file.getAbsolutePath).onComplete{
+      case Success(result) =>
+        val article = parse(file, result)
         log.info(s"读取文章文件${file.getName}成功")
         handler.handle(Future.succeededFuture(article))
-      } else {
-        log.error("读取文章文件失败.", res.cause())
-        handler.handle(Future.failedFuture(res.cause()))
+      case Failure(cause) =>
+        log.error("读取文章文件失败.", cause)
+        handler.handle(Future.failedFuture(cause))
       }
-    })
   }
 
   /**

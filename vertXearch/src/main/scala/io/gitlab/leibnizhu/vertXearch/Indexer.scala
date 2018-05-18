@@ -4,7 +4,7 @@ import java.io.File
 import java.nio.file.Paths
 
 import io.gitlab.leibnizhu.vertXearch.Constants._
-import io.vertx.core.{AsyncResult, CompositeFuture, Future, Handler}
+import io.vertx.core.{CompositeFuture, Future}
 import org.apache.lucene.document._
 import org.apache.lucene.index.{IndexWriter, IndexWriterConfig, Term}
 import org.apache.lucene.store.FSDirectory
@@ -79,7 +79,6 @@ class Indexer(indexDirectoryPath: String) {
     * @param callback 加入writer之后的回调,传入是否成功
     */
   private def indexFile(file: File, callback: Future[Boolean]): Unit = {
-    System.out.println("Indexing " + file.getCanonicalPath)
     val future:Future[Document] = Future.future()
     future.setHandler(ar => {
       if(ar.succeeded()){
