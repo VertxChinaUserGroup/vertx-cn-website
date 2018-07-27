@@ -2,6 +2,7 @@ package io.gitlab.leibnizhu.vertXearch
 
 import java.nio.file.Paths
 
+import io.gitlab.leibnizhu.vertXearch.Constants._
 import org.apache.lucene.document.Document
 import org.apache.lucene.index.{DirectoryReader, MultiFields}
 import org.apache.lucene.queryparser.classic.MultiFieldQueryParser
@@ -12,9 +13,9 @@ class Searcher(indexDirectoryPath: String) {
   private val indexDirectory = FSDirectory.open(Paths.get(indexDirectoryPath))
   private var reader: DirectoryReader = DirectoryReader.open(indexDirectory)
   var indexSearcher = new IndexSearcher(reader)
-  var queryParser = new MultiFieldQueryParser(Array(Constants.TITLE,Constants.CONTENTS, Constants.AUTHOR), Constants.analyzer)
+  var queryParser = new MultiFieldQueryParser(Array(TITLE,CONTENTS, AUTHOR), ANALYZER)
 
-  def search(searchQuery: String, length: Int = Constants.MAX_SEARCH): (Query, List[Document]) = {
+  def search(searchQuery: String, length: Int = MAX_SEARCH): (Query, List[Document]) = {
     val query = queryParser.parse(searchQuery.toLowerCase)
     (query, topDocsToDocumentList(indexSearcher.search(query, length)))
   }

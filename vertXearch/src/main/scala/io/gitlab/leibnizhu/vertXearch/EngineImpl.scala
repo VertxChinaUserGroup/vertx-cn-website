@@ -5,7 +5,7 @@ import java.io.File
 
 import io.gitlab.leibnizhu.vertXearch.Constants._
 import io.vertx.core.buffer.Buffer
-import io.vertx.core.{AsyncResult, Future, Handler}
+import io.vertx.scala.core.Future
 import org.apache.lucene.search.highlight._
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -16,7 +16,7 @@ class EngineImpl(indexPath: String, articlePath: String) extends Engine {
   private val log: Logger = LoggerFactory.getLogger(getClass)
   private val indexer: Indexer = new Indexer(indexPath)
   private var searcher: Searcher = _
-  private val formatter: Formatter = new SimpleHTMLFormatter("<font color='red'>", "</font>")
+  private val formatter: Formatter = new SimpleHTMLFormatter(keywordPreTag, keywordPostTag)
   private val fragmenter: Fragmenter = new SimpleFragmenter(150)
 
   /**
@@ -26,10 +26,11 @@ class EngineImpl(indexPath: String, articlePath: String) extends Engine {
   def init(afterInit: Future[Unit]): Engine = {
     prepareDictionaries()
     val lostIndex = getLastIndexTimestamp == 0
-    val future: Future[Int] = Future.future()
+    val future: Future[Int] = Future.future() //建立索引的Future
     future.setHandler(_ => {
       if (lostIndex) setCurrentIndexTimestamp(System.currentTimeMillis())
       this.searcher = new Searcher(indexPath)
+      log.info("搜索引擎EngineImpl启动完毕")
       afterInit.complete()
     })
     if (lostIndex) {
@@ -97,9 +98,9 @@ class EngineImpl(indexPath: String, articlePath: String) extends Engine {
     setCurrentIndexTimestamp(currentTime)
   }
 
-  private def setCurrentIndexTimestamp(currentTime: Long) = vertx.fileSystem().writeFileBlocking(timestampFile(), Buffer.buffer(currentTime.toString))
+  private def setCurrentIndexTimestamp(currentTime: Long) = vertx.fileSystem().writeFileBlocking(timestampFile, Buffer.buffer(currentTime.toString))
 
-  private def getLastIndexTimestamp = Try(vertx.fileSystem().readFileBlocking(timestampFile()).toString().toLong).getOrElse(0L)
+  private def getLastIndexTimestamp = Try(vertx.fileSystem().readFileBlocking(timestampFile).toString().toLong).getOrElse(0L)
 
   /**
     * 清理文章文件已经被删除,但是索引里还有的那些Document
@@ -143,29 +144,24 @@ class EngineImpl(indexPath: String, articlePath: String) extends Engine {
     * @param searchQuery 查找关键词
     * @return 匹配的文档,按相关度降序
     */
-  override def search(searchQuery: String, length: Int, callback: Handler[AsyncResult[List[Article]]]): Unit = {
-    val trySearch = Try({
+  override def search(searchQuery: String, length: Int, callback: Future[List[Article]]): Unit = {
+    handleTryWithFuture(Try({
       val (query, docs) = searcher.search(searchQuery.toLowerCase(), length)
       //设置高亮格式//设置高亮格式
       val highlighter = new Highlighter(formatter, new QueryScorer(query))
       //设置返回字符串长度
       highlighter.setTextFragmenter(fragmenter)
       docs.map(doc => {
-        //这里的.replaceAll("\\s*", "")是必须的，\r\n这样的空白字符会导致高亮标签错位
-        val id = doc.get(ID)
-        val content = doc.get(CONTENTS).replaceAll("\\s*", "")
-        val highContext = highlighter.getBestFragment(analyzer, CONTENTS, content)
-        val title = doc.get(TITLE).replaceAll("\\s*", "")
-        val highTitle = highlighter.getBestFragment(analyzer, TITLE, title)
-        val author = doc.get(AUTHOR).replaceAll("\\s*", "")
-        val highAuthor = highlighter.getBestFragment(analyzer, AUTHOR, author)
-        Article(id,
-          Option(highTitle).getOrElse(title),
-          Option(highAuthor).getOrElse(author),
-          Option(highContext).getOrElse(subContext(content)))
+        //FIXME 网上说这里的.replaceAll("\\s*", "")是必须的，\r\n这样的空白字符会导致高亮标签错位,但实测好像并不影响
+        val content = doc.get(CONTENTS)//.replaceAll("\\s*", "")
+        val title = doc.get(TITLE)//.replaceAll("\\s*", "")
+        val author = doc.get(AUTHOR)//.replaceAll("\\s*", "")
+        Article(doc.get(ID), //以下三个都是尝试高亮,高亮失败则用原来的纯文本
+          Option(highlighter.getBestFragment(ANALYZER, TITLE, title)).getOrElse(title),
+          Option(highlighter.getBestFragment(ANALYZER, AUTHOR, author)).getOrElse(author),
+          Option(highlighter.getBestFragment(ANALYZER, CONTENTS, content)).getOrElse(subContext(content)))
       })
-    })
-    callback.handle(tryToFuture(trySearch))
+    }), callback)
   }
 
   /**
@@ -180,13 +176,16 @@ class EngineImpl(indexPath: String, articlePath: String) extends Engine {
   /**
     * 关闭搜索引擎
     */
-  override def stop(callback: Handler[AsyncResult[Unit]]): Unit = {
-    val tryStop = Try({
+  override def stop(callback: Future[Unit]): Unit =
+    handleTryWithFuture(Try({
       indexer.close()
       searcher.close()
-    })
-    callback.handle(tryToFuture(tryStop))
-  }
+    }), callback)
 
-  def tryToFuture[T](tryObj: Try[T]): Future[T] = if (tryObj.isSuccess) Future.succeededFuture(tryObj.get) else Future.failedFuture(tryObj.failed.get)
+
+  def handleTryWithFuture[T](tryObj: Try[T], callback: Future[T]): Unit =
+    if (tryObj.isSuccess)
+      callback.complete(tryObj.get)
+    else
+      callback.fail(tryObj.failed.get)
 }

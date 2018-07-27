@@ -1,16 +1,17 @@
 package io.gitlab.leibnizhu.vertXearch
 
 import io.gitlab.leibnizhu.vertXearch.Constants._
-import io.vertx.core.{Future, Handler}
+import io.gitlab.leibnizhu.vertXearch.ResponseUtil._
+import io.vertx.core.Handler
 import io.vertx.lang.scala.ScalaVerticle
-import io.vertx.lang.scala.json.JsonObject
+import io.vertx.scala.core.Future
 import io.vertx.scala.core.http.HttpServer
 import io.vertx.scala.ext.web.handler.StaticHandler
 import io.vertx.scala.ext.web.{Router, RoutingContext}
 import org.slf4j.LoggerFactory
 
-import scala.collection.JavaConverters._
-import scala.util.{Failure, Success}
+import scala.concurrent.Promise
+import scala.util.{Failure, Success, Try}
 
 class MainVerticle extends ScalaVerticle {
   private val log = LoggerFactory.getLogger(getClass)
@@ -18,21 +19,24 @@ class MainVerticle extends ScalaVerticle {
   private var server: HttpServer = _
   private var searchEngine: Engine = _
 
-  override def start(): Unit = {
-    super.start()
-    val future: Future[Unit] = Future.future()
-    future.setHandler(_ => { //初始化工具类/组件
+  override def startFuture(): concurrent.Future[_] = {
+    val promise = Promise[Unit]()
+    //初始化工具类/组件
+    val startedFuture = Future.future[Unit]().setHandler(ar => {
       mountRouters() //挂载所有子路由
       startServer(); //启动服务器
+      if (ar.succeeded()) promise.success(()) else promise.failure(ar.cause())
     })
-    initComponents(future)
+    initComponents(startedFuture)
+    promise.future
   }
 
-  private def initComponents(afterSearchEngineStarted: Future[Unit]): Unit = {
+  private def initComponents(afterSearchEngineStarted: Future[Unit]): Future[Unit] = {
     Constants.init(ctx)
     this.mainRouter = Router.router(vertx)
     this.server = vertx.createHttpServer
-    this.searchEngine = new EngineImpl(indexPath(), articlePath()).init(afterSearchEngineStarted)
+    this.searchEngine = new EngineImpl(indexPath, articlePath).init(afterSearchEngineStarted)
+    afterSearchEngineStarted
   }
 
   def mountRouters(): Unit = {
@@ -43,23 +47,23 @@ class MainVerticle extends ScalaVerticle {
 
   private def searchByKeyWord: Handler[RoutingContext] = rc => {
     val startTime = System.currentTimeMillis()
-    val req = rc.request
-    val response = rc.response
-    val keyWord = req.getParam("keyword").getOrElse("")
-    val length = req.getParam("length").map(_.toInt).getOrElse(MAX_SEARCH)
-    searchEngine.search(keyWord, length, ar => {
-      response.putHeader("content-type", "application/json;charset=UTF-8")
-        .end(if (ar.succeeded()) {
+    val (request, response) = (rc.request, rc.response)
+    val keyWord = request.getParam("keyword").getOrElse("")
+    val lengthOption = request.getParam("length")
+    val length = Math.max(1,  Try(lengthOption.map(_.toInt).getOrElse(MAX_SEARCH)).getOrElse(MAX_SEARCH)) //防止传入的长度值小于等于0
+    searchEngine.search(keyWord, length, Future.future[List[Article]]().setHandler(ar => {
+      val costTime = System.currentTimeMillis() - startTime
+      response.putHeader("content-type", "application/json;charset=UTF-8").end(
+        if (ar.succeeded()) {
           val results = ar.result()
-          val costTime = System.currentTimeMillis() - startTime
           log.debug(s"查询关键词'$keyWord'成功, 查询到${results.size}条结果, 耗时${costTime}毫秒")
-          new JsonObject().put("status", "success").put("results", results.asJava).put("cost", costTime).toString
+          successSearch(results, costTime)
         } else {
           val cause = ar.cause()
-          log.error("查询失败", cause)
-          new JsonObject().put("status", "error").put("message", cause.getClass.getName+":"+cause.getMessage).toString
+          log.error(s"查询关键词'$keyWord'失败, 耗时${costTime}毫秒", cause)
+          failSearch(cause, costTime)
         })
-    })
+    }))
   }
 
   /**
@@ -70,7 +74,7 @@ class MainVerticle extends ScalaVerticle {
     server.requestHandler(mainRouter.accept(_)).listenFuture(port).onComplete {
       case Success(_) =>
         log.info("监听{}端口的HTTP服务器启动成功", port)
-        searchEngine.startRefreshTimer(refreshTimerInterval())
+        searchEngine.startRefreshTimer(refreshTimerInterval)
       case Failure(cause) =>
         log.error("监听{}端口的HTTP服务器失败，原因：{}", Seq[AnyRef](port, cause.getLocalizedMessage): _*)
       }
@@ -78,7 +82,7 @@ class MainVerticle extends ScalaVerticle {
 
   override def stop(): Unit = {
     server.close(res => log.info("HTTP服务器关闭" + (if (res.succeeded) "成功" else "失败")))
-    searchEngine.stop(res => log.info("搜索引擎关闭" + (if (res.succeeded) "成功" else "失败")))
+    searchEngine.stop(Future.future().setHandler(res => log.info("搜索引擎关闭" + (if (res.succeeded) "成功" else "失败"))))
     super.stop()
   }
 
