@@ -12,7 +12,7 @@ object LuceneTester {
 
   def main(args: Array[String]) {
     Constants.init(Vertx.vertx().getOrCreateContext())
-    LuceneTester.createIndex(num => {
+    LuceneTester.createIndex(_ => {
       LuceneTester.search("编译")
     })
   }
@@ -38,7 +38,7 @@ object LuceneTester {
   private def search(searchQuery: String): Unit = {
     searcher = new Searcher(indexDir)
     val startTime = System.currentTimeMillis
-    val (query, hitDocs) = searcher.search(searchQuery)
+    val (_, hitDocs) = searcher.search(searchQuery)
     val endTime = System.currentTimeMillis
     println(hitDocs.size + " documents found. Time :" + (endTime - startTime))
     for (doc <- hitDocs) {

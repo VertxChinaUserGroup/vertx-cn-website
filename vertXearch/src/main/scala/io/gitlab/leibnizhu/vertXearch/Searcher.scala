@@ -24,9 +24,15 @@ class Searcher(indexDirectoryPath: String) {
   def getDocument(scoreDoc: ScoreDoc): Document = indexSearcher.doc(scoreDoc.doc)
 
   def close(): Unit = {
+    reader.close()
     indexDirectory.close()
   }
 
+  /**
+    * 刷新IndexSearcher
+    * 如果文件夹内有修改,则openIfChanged()返回非null,此时更新IndexReader和IndexSearcher
+    * 否则啥也不干
+    */
   def refreshIndexSearcher(): Unit = {
     val oldReader = this.reader
     val newReader = DirectoryReader.openIfChanged(reader)

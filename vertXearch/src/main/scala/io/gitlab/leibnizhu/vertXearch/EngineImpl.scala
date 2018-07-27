@@ -7,30 +7,44 @@ import io.gitlab.leibnizhu.vertXearch.Constants._
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.{AsyncResult, Future, Handler}
 import org.apache.lucene.search.highlight._
-import org.slf4j.LoggerFactory
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.Try
 
 
-class EngineImpl(indexPath: String, articlePath: String, afterInit: Future[Unit]) extends Engine {
-  private val log = LoggerFactory.getLogger(getClass)
+class EngineImpl(indexPath: String, articlePath: String) extends Engine {
+  private val log: Logger = LoggerFactory.getLogger(getClass)
   private val indexer: Indexer = new Indexer(indexPath)
   private var searcher: Searcher = _
-  private val formatter: Formatter =new SimpleHTMLFormatter("<font color='red'>", "</font>")
-  private val fragmenter: Fragmenter =new SimpleFragmenter(150)
+  private val formatter: Formatter = new SimpleHTMLFormatter("<font color='red'>", "</font>")
+  private val fragmenter: Fragmenter = new SimpleFragmenter(150)
 
-  prepareFirstRunFuture()
-
-  def prepareFirstRunFuture(): Unit = {
+  /**
+    * 初始化完毕后建立索引,然后初始化Searcher
+    * 以保证Searcher可以顺利初始化
+    */
+  def init(afterInit: Future[Unit]): Engine = {
+    prepareDictionaries()
+    val lostIndex = getLastIndexTimestamp == 0
     val future: Future[Int] = Future.future()
     future.setHandler(_ => {
+      if (lostIndex) setCurrentIndexTimestamp(System.currentTimeMillis())
       this.searcher = new Searcher(indexPath)
       afterInit.complete()
     })
-    prepareDictionaries()
-    indexer.createIndex(articlePath, future)
+    if (lostIndex) {
+      log.info("索引文件疑似丢失,准备重建索引...")
+      indexer.createIndex(articlePath, future)
+    } else {
+      log.info("索引文件存在,无需重建...")
+      future.complete(0)
+    }
+    this
   }
 
+  /**
+    * 准备文章目录和索引目录,没有则创建
+    */
   private def prepareDictionaries(): Unit = {
     val dataDir = new File(articlePath)
     if (!dataDir.exists()) dataDir.mkdir()
@@ -45,13 +59,7 @@ class EngineImpl(indexPath: String, articlePath: String, afterInit: Future[Unit]
     */
   override def createIndex(): Unit = {
     val future: Future[Int] = Future.future()
-    future.setHandler(ar => {
-      if (ar.succeeded()) {
-        log.info("创建索引成功")
-      } else {
-        log.error("创建索引失败", ar.cause())
-      }
-    })
+    future.setHandler(ar => if (ar.succeeded()) log.info("创建索引成功") else log.error("创建索引失败", ar.cause()))
     indexer.createIndex(articlePath, future)
   }
 
@@ -66,29 +74,32 @@ class EngineImpl(indexPath: String, articlePath: String, afterInit: Future[Unit]
     * @return 更新索引的文件数量
     */
   override def refreshIndex(): Unit = {
-    val lastRefreshTime = Try(vertx.fileSystem().readFileBlocking(timestampFile()).toString().toLong).getOrElse(0L)
+    //从文件读取上次刷新的时间戳
+    val lastRefreshTime = getLastIndexTimestamp
     val currentTime = System.currentTimeMillis()
+    //打文章目录
     val files = new File(articlePath).listFiles()
     if (files != null && files.nonEmpty) {
+      //找出文章目录里面,存在的,可读的,修改时间大于上次刷新时间戳的txt文件,即需要更新索引的文件
       val updatedFiles = files.filter(file => !file.isDirectory && file.exists && file.canRead && file.getName.endsWith(".txt") && file.lastModified() - lastRefreshTime >= 0)
       if (updatedFiles.length > 0) {
         val future: Future[Int] = Future.future()
         future.setHandler(ar => {
-          if (ar.succeeded()) {
-            log.info("创建索引成功")
-          } else {
-            log.error("创建索引失败", ar.cause())
-          }
+          if (ar.succeeded()) log.info("创建索引成功") else log.error("创建索引失败", ar.cause())
           searcher.refreshIndexSearcher()
         })
-        indexer.createIndex(updatedFiles, future)
+        indexer.createIndex(updatedFiles, future) //过滤后的文件进行创建/更新索引
       } else {
         log.info("没有更新了的文章")
       }
     }
     //将本次更新的时间戳写入到文件
-    vertx.fileSystem().writeFileBlocking(timestampFile(), Buffer.buffer(currentTime.toString))
+    setCurrentIndexTimestamp(currentTime)
   }
+
+  private def setCurrentIndexTimestamp(currentTime: Long) = vertx.fileSystem().writeFileBlocking(timestampFile(), Buffer.buffer(currentTime.toString))
+
+  private def getLastIndexTimestamp = Try(vertx.fileSystem().readFileBlocking(timestampFile()).toString().toLong).getOrElse(0L)
 
   /**
     * 清理文章文件已经被删除,但是索引里还有的那些Document
@@ -102,6 +113,7 @@ class EngineImpl(indexPath: String, articlePath: String, afterInit: Future[Unit]
         indexer.deleteDocument(doc.get(ID))
       }).size
     if (deleted > 0) {
+      //有删除的文档索引,需要提交,同时刷新searcher
       indexer.writer.commit()
       searcher.refreshIndexSearcher()
     } else {
@@ -153,17 +165,13 @@ class EngineImpl(indexPath: String, articlePath: String, afterInit: Future[Unit]
           Option(highContext).getOrElse(subContext(content)))
       })
     })
-    if(trySearch.isSuccess){
-      callback.handle(Future.succeededFuture(trySearch.get))
-    } else {
-      callback.handle(Future.failedFuture(trySearch.failed.get))
-    }
+    callback.handle(tryToFuture(trySearch))
   }
 
   /**
     * 截取片段长度
     *
-    * @param content
+    * @param content 截取的长度
     * @return
     */
   private def subContext(content: String) =
@@ -177,6 +185,8 @@ class EngineImpl(indexPath: String, articlePath: String, afterInit: Future[Unit]
       indexer.close()
       searcher.close()
     })
-    callback.handle(if (tryStop.isSuccess) Future.succeededFuture() else Future.failedFuture(tryStop.failed.get))
+    callback.handle(tryToFuture(tryStop))
   }
+
+  def tryToFuture[T](tryObj: Try[T]): Future[T] = if (tryObj.isSuccess) Future.succeededFuture(tryObj.get) else Future.failedFuture(tryObj.failed.get)
 }
