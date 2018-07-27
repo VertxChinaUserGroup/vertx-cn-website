@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>搜索DEMO</title>
+</head>
+<body>
+<input id="q" type="text"/>
+<input id="submit" type="button" value="查询"/>
+<span id="cost"></span>
+<hr/>
+<table border="1">
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>标题</th>
+        <th>作者</th>
+        <th>内容</th>
+    </tr>
+    </thead>
+    <tbody id="result">
+
+    </tbody>
+</table>
+<script type="text/javascript" src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+<script type="text/javascript">
+    $(document).keydown(function(event){
+        if(event.keyCode===13){
+            query()
+        }
+    });
+    $("#submit").on("click", function () {
+        query();
+    })
+    function query(){
+        var query = $("#q").val();
+        $.ajax({
+            url: "/q/" + query,
+            type: "GET",
+            success: function (result) {
+                var html = "";
+                for(var i = 0; i < result.results.length; i++){
+                    var doc = result.results[i];
+                    html = html + "<tr>" +
+                        "<td>"+doc["id"]+"</td>" +
+                        "<td>"+doc["title"]+"</td>" +
+                        "<td>"+doc["author"]+"</td>" +
+                        "<td>"+doc["content"]+"</td>" +
+                        "</tr>\n"
+                }
+                $("#result").html(html);
+                $("#cost").text("查询结果:"+result.results.length+"条, 查询耗时:"+result["cost"]/1000+"秒");
+            }
+        })
+    }
+</script>
+</body>
+</html>
