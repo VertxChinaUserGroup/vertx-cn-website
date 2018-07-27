@@ -1,10 +1,14 @@
 {
-  /* 索引位置*/
-    "indexPath":"/Users/leibnizhu/Desktop/Index",
+  /*索引存放位置*/
+  "indexPath": "/Users/leibnizhu/workspace/vertx-cn-website/vertXearch/src/test/data/Index",
   /*文章原始文件位置*/
-    "articlePath":"/Users/leibnizhu/Desktop/Data",
-    /*从articlePath更新索引的时间间隔,单位:秒*/
-    "refreshIndexPerSecond": 10,
-    /*服务端口*/
-    "serverPort": 8083
+  "articlePath": "/Users/leibnizhu/workspace/vertx-cn-website/vertXearch/src/test/data/Articles",
+  /*从articlePath更新索引的时间间隔,单位:秒*/
+  "refreshIndexPerSecond": 60,
+  /*服务端口*/
+  "serverPort": 8083,
+  /*返回的关键词前置标签,默认红色字体*/
+  "keywordPreTag": "<font color='red'>",
+  /*返回的关键词后置标签,要和前置标签闭合*/
+  "keywordPostTag": "</font>"
 }

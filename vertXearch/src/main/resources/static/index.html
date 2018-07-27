@@ -22,7 +22,7 @@
 
     </tbody>
 </table>
-<script type="text/javascript" src="/static/jquery-3.3.1.min.js"></script>
+<script type="text/javascript" src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
 <script type="text/javascript">
     $(document).keydown(function(event){
         if(event.keyCode===13){
@@ -38,7 +38,7 @@
             url: "/q/" + query,
             type: "GET",
             success: function (result) {
-                var html = ""
+                var html = "";
                 for(var i = 0; i < result.results.length; i++){
                     var doc = result.results[i];
                     html = html + "<tr>" +
@@ -49,7 +49,7 @@
                         "</tr>\n"
                 }
                 $("#result").html(html);
-                $("#cost").text("查询结果:"+result.results.length+"条, 查询耗时:"+result["cost"]+"ms");
+                $("#cost").text("查询结果:"+result.results.length+"条, 查询耗时:"+result["cost"]/1000+"秒");
             }
         })
     }

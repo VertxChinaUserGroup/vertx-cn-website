@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>io.gitlab.leibnizhu</groupId>
     <artifactId>vertXearch</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.1</version>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
@@ -12,8 +12,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <finalName>vertXearch</finalName>
         <scala.version>2.12.4</scala.version>
-        <scala-test.version>3.0.0</scala-test.version>
+        <scala-test.version>3.0.5</scala-test.version>
         <lucene.version>7.2.0</lucene.version>
+        <vertx.version>3.5.1</vertx.version>
         <slf4j.version>1.7.24</slf4j.version>
         <logback.version>1.1.11</logback.version>
     </properties>
@@ -35,7 +36,12 @@
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-web-scala_2.12</artifactId>
-            <version>3.5.1</version>
+            <version>${vertx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-web-client-scala_2.12</artifactId>
+            <version>${vertx.version}</version>
         </dependency>
 
         <!--日志相关-->
@@ -71,7 +77,7 @@
         <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_2.12</artifactId>
-            <version>3.0.5</version>
+            <version>${scala-test.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -83,25 +89,6 @@
                 <directory>src/main/resources</directory>
             </resource>
         </resources>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>net.alchim31.maven</groupId>
-                    <artifactId>scala-maven-plugin</artifactId>
-                    <version>3.2.2</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.3</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-jar-plugin</artifactId>
-                    <version>2.6</version>
-                </plugin>
-            </plugins>
-        </pluginManagement>
 
         <plugins>
             <plugin>
@@ -201,6 +188,26 @@
                                 ${project.build.directory}/lib
                             </outputDirectory>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!--scalatest-->
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
+                <version>1.0</version>
+                <configuration>
+                    <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
+                    <junitxml>.</junitxml>
+                    <filereports>WDF TestSuite.txt</filereports>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>test</id>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

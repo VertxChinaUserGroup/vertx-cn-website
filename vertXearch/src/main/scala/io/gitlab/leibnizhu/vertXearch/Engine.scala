@@ -1,6 +1,6 @@
 package io.gitlab.leibnizhu.vertXearch
 
-import io.vertx.core.{AsyncResult, Handler}
+import io.vertx.scala.core.Future
 
 trait Engine {
   /**
@@ -33,10 +33,10 @@ trait Engine {
     * @param searchQuery 查找关键词
     * @param callback 查询成功后的回调方法, 处理内容为 匹配的文档,按相关度降序
     */
-  def search(searchQuery: String, length: Int, callback: Handler[AsyncResult[List[Article]]]): Unit
+  def search(searchQuery: String, length: Int, callback: Future[List[Article]]): Unit
 
   /**
     * 关闭搜索引擎
     */
-  def stop(callback: Handler[AsyncResult[Unit]]): Unit
+  def stop(callback: Future[Unit]): Unit
 }
