@@ -1,0 +1,33 @@
+关于Vert.x的冷知识
+圆胖肿
+之前回答过关于Java的冷知识：圆胖肿：java有哪些冷知识?
+
+以下是Vert.x相关的冷知识：
+
+Vert.x最早叫做Node.x，从名字上可以看出来，是作者从Node.js启发之后的产物，本意是实现一个JVM上的多线程Node.js
+为了避免版权问题，所以改成Vert.x，念做Vertex，在图论中，vertex和node是同义词，都表示节点，Vertex (graph theory)
+Vert.x是一个帝国理工的校友Tim Fox在VMWare做message总线时候的开源项目，后来跳槽到红帽之后，就把这个项目带到了红帽，然后VMWare开始耍流氓，claim版权，于是各方妥协，将Vert.x交给了Eclipse foundation，然后也是Eclipse第一个将源代码放在github上的开源项目
+Vert.x是一个Actor model的实现，但是又不局限于该模型，而进一步发展了该模型，真正Actor对应的是Verticle里面的Handler
+前面说到Vert.x是Tim Fox跑到红帽后去的开源项目，所以Vert.x的作者群，主要由红帽发工资，同时跟Netty的几个人关系密切，比如现在主要维护Netty的normanmaurer (Norman Maurer)，在访问Facebook的时候，就曾介绍过他们在Apple使用Vert.x的情况，所以我们在用Vert.x的过程中也经常会遇到Netty的bugs……
+Norman访问facebook时候的视频：https://www.youtube.com/watch?v=_GRIyCMNGGI
+Norman这个名字一看就像是德国人的名字，Netty的作者Trustin Lee是南韩人，延世大学的校友
+Vert.x是多语言支持的（Polyglot），当前支持Java, Javascript, Groovy, Ruby, Ceylon, Scala, Kotlin and in future Clojure, Haskell(eta)
+这些语言里面，JS, Groovy & Ruby是脚本，起名都比较直观，Groovy就是一个简单正面的形容词，Ruby就是红宝石，没有什么特殊的，但是JRuby的符号是一个小鸟……
+说起JRuby就说到红帽有一个ProjectOdd项目组，这个项目组顾名思义，就搞一些奇奇怪怪的东西，比如JRuby，Tim Fox就曾经是这个项目组的一员，所以Vert.x也曾经是这个项目组的一员
+JRuby背后另外一个搞主的是东京大学，嗯，希望将来有一天北大等教育机构能够接管vertx-lang-clojure
+跟Java是印尼的一个小岛名一样，Kotlin也是圣彼得堡旁边的一个小岛，类似的还有Ceylon，是斯里兰卡的一个小岛，盛产茶和咖啡
+Scala的意思是意大利语的梯子，希望通过这个梯子让开发人员从Java爬到fp+oop
+Scala的语言很符合德国人的性格，严谨复杂，Ruby也比较能反映出日本人的性格，也比较复杂，对人的要求比较高，相比之下Java和Python就要简单很多
+vertx-lang-scala的维护者目前在德国，住在慕尼黑，某挨踢公司高级consultant，精力充沛，几乎把Vert.x除了core以外其他的模块用Scala整个包了一遍
+vertx-lang-kotlin的主要贡献者住在圣彼得堡，Haskell在JVM上的方言eta的作者在纽约
+eta已经申请gsoc2018了，项目导师列表都出来了，对Haskell和Vert.x有兴趣的在校生，可以开始关注了，报名应该在春节后就开始了，详细见：ETA GSoC 2018
+Clojure的符号是中国的太极，一个蓝色和绿色的太极符号，包裹着一个希腊字母lambda
+Haskell是人的名字，一个出生在麻省的数学家的名字，麻省离纽约也不远，都是新英格兰，新英格兰上去就是加拿大的新法兰西，当年戴高乐访问新法兰西，振臂一呼，独立的魁北克万岁……
+eta gsoc 2018有一个导师住在澳洲的塔斯马尼亚，很多国家都有这种旅游胜地的小岛，比如夏威夷，科西嘉，济州，冲绳，塔斯马尼亚，台湾，而且不少都有分裂主义倾向
+Netty作者Trustin Lee在line，Tim Fox最新一份工作在伦敦的facebook，这个科技树上不少重要人类在搞社交
+Vert.x的几个重要维护人员，目前以法国人居多，看linkedin，不少是法兰西大学校的毕业生，法兰西的教育制度很特殊，分为grande ecole和universite，可以简单认为前者就是法国的985，拿破仑定的规则，拿破仑对于法兰西的贡献，并不是他打了多少胜利的战斗；而是今天法兰西的很多制度，比如法律，比如教育，都是拿破仑定的，沿用至今
+“我一生四十次战争胜利的光荣，被滑铁卢一战就抹去了，但我有一件功绩是永垂不朽的，这就是我的法典。”
+说到秩序，嗯，Vert.x上语言的alignment：
+
+封装代表着秩序，用的人越多越evil
+bye

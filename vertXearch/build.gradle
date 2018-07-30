@@ -43,14 +43,14 @@ dependencies {
     testRuntime 'org.pegdown:pegdown:1.4.2'
 }
 
-defaultTasks 'clean', 'spec', 'customFatJar'
+defaultTasks 'clean', 'spec', 'jar', 'customFatJar'
 
 //打普通jar包
 jar {
     manifest {
         attributes 'Manifest-Version': 1.0,
                 'Main-Class': 'io.gitlab.leibnizhu.vertXearch.MainLauncher',
-                'Main-Verticle': 'io.gitlab.leibnizhu.vertXearch.MainVerticle'
+                'Main-Verticle': 'io.gitlab.leibnizhu.vertXearch.verticle.HttpSearchVerticle'
     }
 }
 
@@ -59,7 +59,7 @@ task customFatJar(type: Jar) {
     manifest {
         attributes 'Manifest-Version': 1.0,
                 'Main-Class': 'io.gitlab.leibnizhu.vertXearch.MainLauncher',
-                'Main-Verticle': 'io.gitlab.leibnizhu.vertXearch.MainVerticle'
+                'Main-Verticle': 'io.gitlab.leibnizhu.vertXearch.verticle.HttpSearchVerticle'
     }
     classifier = 'fat'
     from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
@@ -68,6 +68,6 @@ task customFatJar(type: Jar) {
 
 task spec(dependsOn: ['testClasses'], type: JavaExec) {
     main = 'org.scalatest.tools.Runner'
-    args = ['-R', 'build/classes/scala/test', '-o']
+    args = ['-R', 'target/classes/scala/test', '-o']
     classpath = sourceSets.test.runtimeClasspath
 }

@@ -1,0 +1,238 @@
+vert.x中CompositeFuture的源码解
+lileihanmeimei
+如果对vert.x中future不熟悉的话，请先看上一篇文章。vert.x中future的源码解析
+
+今天来分析Future实现类中另一个实现CompositeFuture。看名字就大概知道这个类的功能作用。组合future，就是把多个future组合起来。
+
+使用场景：
+
+等待多个future全部成功，然后响应成功操作。如果中途有future失败，那么结束等待，响应失败操作。（即compositeFuture的all方法）
+多个future只要有一个成功，就响应成功操作。如果全部失败的话，响应失败操作。（即compositeFuture的any方法）
+等待多个future全部操作完成，然后响应成功操作，如果中途有future失败，也将继续等待所有的future执行完。如果有future失败，最后的compositeFuture还是失败的。这就是与all方法区别。（即compositeFuture的join方法）
+compositeFuture主要就是以上几个操作。同时compositeFuture的构造方法也是私有的，所以开发者不能再去扩展compositeFuture的其他操作。（仅仅就上面3种就够了吗，万一开发者想要扩展compositeFuture的其他操作呢？）
+
+本文具体会以下几部分：
+
+CompositeFuture的实现，CompositeFutureImpl
+CompositeFuture的常用方法all，any，join方法源码分析
+先看CompositeFuture的继承结构。
+
+
+CompositeFuture继承结构
+CompositeFuture继承了future。扩展了几个关于获取内部future和内部future状态的方法。这个比较简单，就不展开分析。
+
+接下来先看CompositeFuture的内部实现。
+
+public class CompositeFutureImpl implements 
+           CompositeFuture, Handler<AsyncResult<CompositeFuture>> {
+  //CompositeFutureImpl的所有属性。
+  //1.需要组合的future列表
+  private final Future[] results;
+  //已完成的future数的统计，初始化时为0
+  private int count;
+  //标记CompositeFuture是否已经完成。
+  private boolean completed;
+  //异步结果。该属性判断当前的CompositeFuture是成功还是失败的。
+  //cause不为空，这是个失败的CompositeFuture。
+  //cause== null的话，这是个成功的CompositeFuture。
+  private Throwable cause;
+  //等待被调用的处理器。
+  private Handler<AsyncResult<CompositeFuture>> handler;
+}
+接下来看CompositeFutureImpl内部比较重要的方法setCompleted，其他标记CompositeFuture完成状态的方法都是直接或间接setCompleted。
+
+ private Handler<AsyncResult<CompositeFuture>> setCompleted(Throwable cause) {
+    synchronized (this) {
+      //如果CompositeFuture已经完成，那么返回null的handler
+      if (completed) {
+        return null;
+      }
+      //标记完成状态
+      this.completed = true;
+      //设置cause的值，这里可能为null。
+      this.cause = cause;
+      //最后返回handler。NO_HANDLER是个空操作。
+      return handler != null ? handler : NO_HANDLER;
+    }
+  }
+该方法很简单，就是设置值而已。
+
+接下来分析complete方法。
+
+//complete方法跟futureImpl一样，也是调用tryComplete方法。
+ //如果tryComplete返回false，则代表当前的CompositeFuture已经完成。进入if分支抛出异常
+  public void complete(CompositeFuture result) {
+    if (!tryComplete(result)) {
+      throw new IllegalStateException("Result is already complete: " + (this.cause == null ? "succeeded" : "failed"));
+    }
+  }
+
+  //这里只是简单的调用一下setCompleted方法。
+  //如果setCompleted返回的handler为null，则当前的CompositeFuture已经完成，
+  //tryComplete方法返回false。
+  public boolean tryComplete(CompositeFuture result) {
+    Handler<AsyncResult<CompositeFuture>> handler = setCompleted(null);
+    if (handler != null) {
+      handler.handle(this);
+      return true;
+    } else {
+      return false;
+    }
+  }
+complete很简单。failed方法也是类似。这里就不分析了。
+
+其他方法跟futureImpl非常类似，如果懂了futureImpl的话，再看懂CompositeFuture 是轻而易举的事。所以这里的其他方法就不深入分析了。
+
+接下来分析比较重要的部分，all方法，any方法，join方法。
+
+还是那句话，执行时机不同。基本异步都是这样。代码不是顺序执行的。这样确实有时候有点难理解。不过没关系，跟着文章的思路来，问题不大。
+
+接下来先分析all方法。先贴上源码。说真的，简单到多看几遍就懂的了。甚至我都有点不想写下去了。
+
+别忘记了all方法的作用，如果忘记了回到本文章开头部分有说明。
+
+ public static CompositeFuture all(Future<?>... results) {
+  //注意执行时机。
+  //---------先说all方法的执行时机。（即做了哪些工作）-----
+  //1.调用all方法时，创建一个创建CompositeFuture，返回这个CompositeFuture，然后all方法
+  //  执行完之后，一般就是为CompositeFuture设置handler（setHandler方法）
+  //2.为传入的future数组设置handler，handler这个lambda不是在调用all方法执行时，
+  //  而是future完成（调用complete或failed或handle等）之后再执行的，即所谓的执行时机不同
+    CompositeFutureImpl composite = new CompositeFutureImpl(results);
+    int len = results.length;
+    for (int i = 0; i < len; i++) {
+      results[i].setHandler(ar -> {
+        //--------未来某一时刻到来，即future的执行时机到了------------
+        //此时，all方法已经执行完毕，相关的调用栈也已经没了，
+        //而CompositeFuture通过闭包的方式保存下来。
+        Handler<AsyncResult<CompositeFuture>> handler = null;
+        if (ar.succeeded()) {
+          //这里锁住CompositeFuture，这里有并发情况，因为多个future可能在多个线程执行
+          synchronized (composite) {
+            //当前future是成功的状态，count累加。
+            //所以调用all方法时，count代表succeeded状态的future
+            composite.count++;
+            //当前CompositeFuture未完成且当前future是future数组中的最后一个完成的future。
+            //则标记当前CompositeFuture为succeeded状态。
+            if (!composite.isComplete() && composite.count == len) {
+              handler = composite.setCompleted(null);
+            }
+          }
+        } else {
+          synchronized (composite) {
+           //如果当前future为failed状态，那么也将当前CompositeFuture标记为failed方法。
+           //这里可以看出来，只要一有future失败，CompositeFuture就是失败的。
+            if (!composite.isComplete()) {
+              handler = composite.setCompleted(ar.cause());
+            }
+          }
+        }
+        //调用handler
+        if (handler != null) {
+          handler.handle(composite);
+        }
+      });
+    }
+    //如果future数组为空的话，那么可以直接设置CompositeFuture的结果为succeeded。
+    if (len == 0) {
+      composite.setCompleted(null);
+    }
+    return composite;
+  }
+接着分析any方法。经过上面的all方法，再看any方法，更简单了。所以直接上源码。
+
+ public static CompositeFuture any(Future<?>... results) {
+    CompositeFutureImpl composite = new CompositeFutureImpl(results);
+    int len = results.length;
+    for (int i = 0;i < len;i++) {
+      results[i].setHandler(ar -> {
+        Handler<AsyncResult<CompositeFuture>> handler = null;
+        if (ar.succeeded()) {
+          synchronized (composite) {
+            //只要future为succeeded状态，那么就标记CompositeFuture为succeeded
+            //并调用相应的handler,不再等待其他future。
+            if (!composite.isComplete()) {
+              handler = composite.setCompleted(null);
+            }
+          }
+        } else {
+          synchronized (composite) {
+           //future为failed状态时，累加count。
+           //所以调用any方法时，CompositeFuture中的count代表的是failed状态的future数量。
+            composite.count++;
+           //当前CompositeFuture未完成且当前future是future数组中的最后一个完成的future，
+           //则标记CompositeFuture为failed状态。
+            if (!composite.isComplete() && composite.count == len) {
+              handler = composite.setCompleted(ar.cause());
+            }
+          }
+        }
+        if (handler != null) {
+          handler.handle(composite);
+        }
+      });
+    }
+    //如果future数组为空的话，那么可以直接设置CompositeFuture的结果为succeeded。
+    if (results.length == 0) {
+      composite.setCompleted(null);
+    }
+    return composite;
+  }
+最后来分析join方法。
+
+//找一个排在前面的future中的失败结果，如果所有的future都是succeeded，
+//那么返回null，代表CompositeFuture是succeeded的。
+private static final Function<CompositeFuture, Throwable> ALL = cf -> {
+    int size = cf.size();
+    for (int i = 0;i < size;i++) {
+      if (!cf.succeeded(i)) {
+        return cf.cause(i);
+      }
+    }
+    return null;
+  };
+
+  public static CompositeFuture join(Future<?>... results) {
+    return join(ALL, results);
+  }
+  
+  private  static CompositeFuture join(Function<CompositeFuture, Throwable> pred, 
+                      Future<?>... results) {
+    CompositeFutureImpl composite = new CompositeFutureImpl(results);
+    int len = results.length;
+    for (int i = 0; i < len; i++) {
+      results[i].setHandler(ar -> {
+        Handler<AsyncResult<CompositeFuture>> handler = null;
+        synchronized (composite) {
+          //累计count，这里的count，代表已经完成的future的数量。
+          composite.count++;
+        //如果当前CompositeFuture未完成且当前future是future数组中的最后一个完成的future
+        //则执行handler相关的操作。
+          if (!composite.isComplete() && composite.count == len) {
+           //这个pred就是上面的ALL，可能返回是一个null，
+           //代表所有的future都成功，那么CompositeFuture也是succeeded。
+
+           //pred返回不为空，那么其中有future是failed的，
+           //那么CompositeFuture也是failed的。
+            Throwable failure = pred.apply(composite);
+            handler = composite.setCompleted(failure);
+          }
+        }
+        if (handler != null) {
+          handler.handle(composite);
+        }
+      });
+    }
+    if (len == 0) {
+      composite.setCompleted(null);
+    }
+    return composite;
+  }
+至此，CompositeFuture源码已经分析完了。那么你理解CompositeFuture了吗？
+
+总结：
+
+我比较纳闷的是CompositeFutureImpl的构造方法为什么不公开出去。让开发者自由定义自己想要的CompositeFuture。 可能是因为all，any，join方法基本涵盖了绝大多数场景。
+在日常开发中，用all，any，join方法完全够用了。
+接下来分析sharedData，eventbus的源码实现。
+对了，忘了说， 以上分析的源码是基于vert.x 3.5.1版本的。

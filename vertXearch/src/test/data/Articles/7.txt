@@ -1,0 +1,176 @@
+Clojure: Hello Vert.x (vertx-lang-clojure发布)
+圆胖肿
+previous in 白木城全栈：
+
+圆胖肿：在Vert.x上实现Clojure语言支持的探索
+​zhuanlan.zhihu.com
+图标
+圆胖肿：Vert.x上的Clojure语言支持（项目已开源）
+​zhuanlan.zhihu.com
+图标
+summary：vertx-lang-clojure 3.5.1.1正式发布到maven central上去了，用户可以通过添加以下依赖实现vert.x上的clojure语言支持：
+
+  <dependency>
+            <groupId>com.w2v4</groupId>
+            <artifactId>vertx-lang-clojure</artifactId>
+            <version>3.5.1.1</version>
+        </dependency>
+或者在gradle中：
+
+compile 'com.w2v4:vertx-lang-clojure:3.5.1.1'
+当然还有clojure用户比较喜欢的lein：
+
+[com.w2v4/vertx-lang-clojure "3.5.1.1"]
+为什么这么做，这么做的意义何在，理由，why？
+主要目的是弥补Vert.x polyglot上FP语言的短板，同时Clojure社区自身也缺乏一个Actor Model实现，所以无论是把Vert.x带给Clojure还是把Clojure带给Vert.x都有重要意义，解决问题首先解决有跟无的问题。
+
+我该怎么用，how？
+下面解决怎么用的问题，一步一步引导用户来创建一个hello from vert.x！程序，我们可以在http://vertx.io的主页上看到，Vert.x上所有语言都有一个hello from vert.x的师范程序，我们也照葫芦画瓢，做一个类似的hello程序出来，代码其实很简单，主要是内容。
+
+我们知道，maven项目下，src文件夹会有main和test两个文件夹，以main文件夹为例，main文件夹下面会有java和resources两个文件夹，java文件夹下放的是java源文件，resources文件夹下放的是各种资源文件，在编译打包的时候，maven会将java文件夹下的文件编译成class文件，然后拷贝到对应的jar根目录下，而resources下的文件则会被直接拷贝到jar根目录下，然后再将jar根目录打包成jar文件，其实就是一个zip文件。
+
+那clojure在maven项目下的结构也类似，只是在main文件夹下多了一个clojure文件夹，跟java文件夹对应，我们写的clojure源文件可以放在main/clojure文件夹下，也可以放在main/resources文件夹下，因为clojure可以被编译执行，有类似脚本一样的效果，其实vert.x支持的所有语言都可以编译执行，当然你也可以先行编译之后再打包，选择权在用户，但是这里强调一下，如果将源文件放入main/resources文件夹下，打包时候，jar文件内部就将出现.clj源文件，而且在部署verticle的时候，因为clojure自身实现的问题，导致源文件不能同时编译，所以我们在部署verticle的时候，会强制串行编译clj源文件，所以这里可能会导致一定程度上的延迟，并出现warning，这个情况在其他语言的部署中也会出现，所以建议将clojure先行编译成class文件之后再打包。
+
+那要编译class文件，我们就需要maven的plugin，clojure对应的maven plugin是这个：
+
+<packaging>clojure</packaging>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.theoryinpractise</groupId>
+                <artifactId>clojure-maven-plugin</artifactId>
+                <version>${clojure.plugin.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <copiedNamespaces>
+                        <copiedNamespace>!.*</copiedNamespace>
+                    </copiedNamespaces>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+而同时，我们要在打包时候支持多语言，我们需要增加shade和java自身的maven插件，所以增加之后，一个完整的maven pom.xml是这样子的：
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.sample</groupId>
+    <artifactId>test</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <java.version>9</java.version>
+        <clojure.version>1.9.0</clojure.version>
+        <clojure.plugin.version>1.8.1</clojure.plugin.version>
+        <junit.version>4.12</junit.version>
+        <vertx.version>3.5.1</vertx.version>
+
+        <main.class>io.vertx.core.Launcher</main.class>
+        <main.verticle>clj:com.sample.main</main.verticle>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-core</artifactId>
+            <version>${vertx.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.w2v4</groupId>
+            <artifactId>vertx-lang-clojure</artifactId>
+            <version>${vertx.version}</version>
+        </dependency>
+    </dependencies>
+
+    <packaging>clojure</packaging>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.theoryinpractise</groupId>
+                <artifactId>clojure-maven-plugin</artifactId>
+                <version>${clojure.plugin.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <copiedNamespaces>
+                        <copiedNamespace>!.*</copiedNamespace>
+                    </copiedNamespaces>
+                </configuration>
+            </plugin>
+
+            <!--java的编译器-->
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.7.0</version>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Main-Class>${main.class}</Main-Class>
+                                        <Main-Verticle>${main.verticle}</Main-Verticle>
+                                    </manifestEntries>
+                                </transformer>
+                                <!--多语言支持必需加入该转换器-->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/services/io.vertx.core.spi.VerticleFactory</resource>
+                                </transformer>
+
+                            </transformers>
+                            <artifactSet />
+                            <outputFile>${project.build.directory}/${project.artifactId}-${project.version}-prod.jar</outputFile>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
+然后我们在src/main/clojure/com/sample目录下，添加一个main.clj文件，然后写入我们期待的hello from vert.x代码，如下：
+
+(ns com.sample.main
+  (:require [io.vertx.clojure.core.vertx :as vertx]
+            [io.vertx.clojure.core.http.http-server :as server]
+            [io.vertx.clojure.core.http.http-server-request :as request]
+            [io.vertx.clojure.core.http.http-server-response :as response]))
+
+(defn handle-request [req]
+  (let [response (request/response req)]
+    (-> response
+        (response/put-header "content-type" "text/plain")
+        (response/end "Hello from Vert.x!"))))
+
+(defn start [vertx]
+  (let [http-server (vertx/create-http-server vertx)]
+    (-> http-server
+        (server/request-handler (vertx/handler handle-request))
+        (server/listen 8080))))
+然后用maven执行package命令，shade插件就会生成一个test-1.0-SNAPSHOT-prod.jar文件，是一个fat jar，用java -jar命令便可执行这个fat jar，当然前提是你得安装jvm环境，本文不教你做native compiling，有兴趣自己看本专栏其他文章，然后打开浏览器，输入http://localhost:8080，就可以看到效果啦，是不是很方便呢？
+
+祝使用愉快
+
+bye
+
+一个小小的bug fixed，因为第一次release，所以华丽地遗漏了vertx-lang-clojure-parent的pom.xml，在maven的依赖下，这没有问题，但是在gradle的解析中，这个环节不可或缺，少了vertx-lang-clojure-parent的话会导致依赖的jar对应的pom.xml解析失败，所以临时做了一个小补丁release上去，所以建议3.5.x版本使用3.5.1.1，而不是3.5.1 ^_^

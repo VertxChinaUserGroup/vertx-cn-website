@@ -1,9 +1,9 @@
-package io.gitlab.leibnizhu.vertXearch
-
+package io.gitlab.leibnizhu.vertXearch.engine
 
 import java.io.File
 
-import io.gitlab.leibnizhu.vertXearch.Constants._
+import io.gitlab.leibnizhu.vertXearch.utils.Article
+import io.gitlab.leibnizhu.vertXearch.utils.Constants._
 import io.vertx.core.buffer.Buffer
 import io.vertx.scala.core.Future
 import org.apache.lucene.search.highlight._

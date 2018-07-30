@@ -1,21 +1,20 @@
-package io.gitlab.leibnizhu.vertXearch
+package io.gitlab.leibnizhu.vertXearch.utils
 
+import io.vertx.core.json.JsonObject
 import io.vertx.lang.scala.json.JsonObject
 
 import scala.collection.JavaConverters._
 
 object ResponseUtil {
-  def successSearch(results: List[Article], costTime: Long): String =
+  def successSearch(results: List[Article], costTime: Long): JsonObject =
     new JsonObject().
       put("status", "success")
-      .put("results", results.asJava)
+      .put("results", results.map(_.toJsonObject).asJava)
       .put("cost", costTime)
-      .toString
 
-  def failSearch(cause: Throwable, costTime: Long): String =
+  def failSearch(cause: Throwable, costTime: Long): JsonObject =
     new JsonObject()
       .put("status", "error")
       .put("message", s"${cause.getClass.getName}:${cause.getMessage}")
       .put("cost", costTime)
-      .toString
 }
