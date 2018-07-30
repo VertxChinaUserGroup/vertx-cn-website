@@ -1,0 +1,187 @@
+vert.x中future的源码解析
+lileihanmeimei
+对于vert.x的开发者而言，对于callback hell总是能嗅出一些坏味道。接下来我们看下vert.x中的future如何实现的和如何解决callback hell问题。
+
+先体会一下callback hell的坏味道吧。
+
+
+当这种中间再加点业务处理。callback再多几层，这代码看起来就非常头疼了。
+
+
+像这种把callback hell通过链式的形式表达出来，比较习惯于常人的思维方式。
+
+
+
+本文具体会以下几部分：
+
+1. future的常用实现futureImpl和一些常用的方法。
+
+2. future的高阶函数实现。
+
+
+
+首先看future接口的继承关系。
+
+
+future的继承关系
+future继承了AsyncResult接口，则future本身可以携带异步结果。同时future的实现类futureImpl也是AsyncResult异步结果的携带者。
+
+future同时也集成了Handler，所以很多调用处需要传Handler的地方，可以直接传future。
+
+接下来看future的最常用的实现类FutureImpl。先看下FutureImpl有哪些属性。
+
+
+futureImpl所有的属性
+failed，true：这是失败的异步结果。此时throwable不为空。
+succeeded，true：这是成功的异步结果。如果有设置结果的话，result不为空。
+handler：真正的异步结果处理器，setHandler方法传入的handler保存在这里。
+result：结果属性。
+throwable：异常结果属性。
+futureImpl是通过future的静态方法调用FutureFactory的方法创建的。这里比较简单不深入分析。
+
+接下来来看常用的方法。complete方法。
+
+ public void complete(T result) {
+    //如果当前future代表的异步结果已完成，则tryComplte方法false， 
+    //然后throw IllegalStateException
+    if (!tryComplete(result)) {
+      throw new IllegalStateException("Result is already complete: " + (succeeded ? "succeeded" : "failed"));
+    }
+  }
+
+  public boolean tryComplete(T result) {
+    Handler<AsyncResult<T>> h;
+    synchronized (this) {
+      if (succeeded || failed) {
+        return false;
+      }
+      this.result = result;
+      succeeded = true;
+      h = handler;
+    }
+    if (h != null) {
+      h.handle(this);
+    }
+    return true;
+  }
+complete方法委托给tryComplete方法来实现。如果tryComplete方法返回false，则说明此异步结果已经完成了，进入if分支，抛出异常。由此可以看出future的最终状态确定下来，就不再改变。
+
+接下来看tryComplete方法。很简单。就是把结果赋值给result。设置到succeeded为true代表当前AsyncResult已经完成。如果当前已经设置了handler那么就触发该handler。（大多数情况，这是已经设置到handler）。failed方法此时类似。
+
+接下来继续看setHandler方法。
+
+ public Future<T> setHandler(Handler<AsyncResult<T>> handler) {
+    boolean callHandler;
+    synchronized (this) {
+      this.handler = handler;
+      //判断当前的future是否已经完成。true：调用传入的handler
+      callHandler = isComplete();
+    }
+    if (callHandler) {
+      handler.handle(this);
+    }
+    return this;
+  }
+
+
+public synchronized boolean isComplete() {
+    return failed || succeeded;
+  }
+sethandler方法也很简单，就是把handler赋值给属性handler。如果当前future代表的AsyncResult已经完成，那么触发handler。
+
+
+
+再看一下handle方法，future本身作为Handler。看看它是如何实现handle方法的。
+
+ public void handle(AsyncResult<T> asyncResult) {
+    if (asyncResult.succeeded()) {
+      complete(asyncResult.result());
+    } else {
+      fail(asyncResult.cause());
+    }
+  }
+还是很简单，就是调用complete方法和failed方法即可。
+
+
+
+接下来接着分析看起来很简单，但是又比较难懂的compose方法。该方法是vert.x解决callback hell很重要的方法。该方法跟fp的flatmap实现原理和思想都差不多。要理解compose方法。最重要的是执行时机不同，执行时机不同，执行时机不同。此处敲黑板，重要的话说3遍。
+
+default <U> Future<U> compose(Function<T, Future<U>> mapper) {
+    if (mapper == null) {
+      throw new NullPointerException();
+    }
+    //先创建好future，然后下面返回这个新创建的future。
+    Future<U> ret = Future.future();
+   //给当前future设置handler。这个handler在将来某个时刻执行。
+    setHandler(ar -> {
+      //这个代码块的代码跟外面的代码执行时机不同。
+      //1. 外面的ret，将在当前future的compose方法调用时执行并返回。
+      //2. 在下一个compose方法或者setHandler方法为ret设置handler。
+
+      // 将来某一时刻到了。执行了这个代码块。 到了此时，当前future已经完成，
+      //并且执行handler中的handle方法。
+      if (ar.succeeded()) {
+        Future<U> apply;
+        try {
+        //3. 获取future中的异步结果。调用compose方法的传入mapper这个functionalInterface
+        //4.mapper返回下一个异步操作future（apply）。
+          apply = mapper.apply(ar.result());
+        } catch (Throwable e) {
+       //执行mapper失败，直接设置ret的异常结果。以完成ret这个future，且触发handler的执行
+          ret.fail(e);
+          return;
+        }
+       //5.为apply设置handler。（此时的ret已经完成handler的设置，执行时机不同）
+       //6. 这个apply future又会将在未来某一时刻执行。注意：在未来某一时刻。执行时机不同。
+       //7. 当apply完成时，调用handler。apply自身作为异步结果（AsyncResult），
+       //调用ret（此时ret作为Handler）
+        apply.setHandler(ret);
+      } else {
+       //如果当前的函数是失败状态的，直接设置ret的异常结果。
+       //以完成ret这个future，且触发handler的执行
+        ret.fail(ar.cause());
+      }
+    });
+    return ret;
+  }
+//接下来的代码中会为ret设置handler
+compose方法比较绕，多读几遍，多理解一下。
+
+把原来需要通过异步回调嵌套才能解决问题的代码换成compose的链式结构的代码，阅读代码的时候就好像顺序执行一样。把异步回调嵌套代码弄到compose方法的mapper中。提高代码的可读性。
+
+懂了上面的compose方法，再看一个比较简单的map方法。所谓的map，就是转换，从一种结果类型转换成另一种结果类型。
+
+ default <U> Future<U> map(Function<T, U> mapper) {
+    if (mapper == null) {
+      throw new NullPointerException();
+    }
+    //这里跟上面一样。就是创建一个ret的future，然后为当前的future设置handler。
+    Future<U> ret = Future.future();
+    setHandler(ar -> {
+      //1. 执行到这里时，此时的ret已经完成handler的设置。
+      if (ar.succeeded()) {
+        U mapped;
+        try {
+          //2. 将异步结果的值传入mapper，并返回一个新的类型值。
+          mapped = mapper.apply(ar.result());
+        } catch (Throwable e) {
+          ret.fail(e);
+          return;
+        }
+       //3. 为ret设置异步结果，并触发ret中的handler执行。
+       //4. 这里的ret是作为AsyncResult，而compose方法的ret是作为handler。
+        ret.complete(mapped);
+      } else {
+        ret.fail(ar.cause());
+      }
+    });
+    return ret;
+  }
+ //这里ret将会再接下来的代码中进行设置handler
+
+
+总结：
+
+关于future的一些常用方法和一些重要方法已经分析完成。
+future的实现也很简洁，功能也相对简单一些。如果想要一些更复杂的操作符。那么推荐实现rxjava。如果大多数情况future能满足业务要求的话，那么直接使用future无妨。
+接下来分析CompositeFuture。这个在vert.x也是比较常用的。

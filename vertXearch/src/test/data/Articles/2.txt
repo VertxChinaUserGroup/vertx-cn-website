@@ -1,0 +1,474 @@
+vert.x中sharedData源码解析（local模式）
+lileihanmeimei
+接着之前vert.x中future的源码分析完之后，继续分析vert.x core中比较重要组件sharedData
+
+由于sharedData涉及到local模式和cluster模式，涉及到代码比较多，所以本文暂时只对local模式展开深入分析，关系到cluster模式相关类，就简单略过了。后面有时间对cluster模式在深入分析。
+根据sharedData提供的接口，本文分以下几部分来展开分析。
+
+sharedData的接口说明和sharedData的实现类sharedDataImpl相关属性说明。
+AsyncMap的源码分析。
+Lock的源码分析。
+counter的源码分析。
+LocalMap的源码分析。
+sharedData的api和sharedDataImpl
+sharedData的初始化在创建vert.x的构造方法中，就是简单的new了一下并传入vertx实例和clusterManager。
+
+VertxImpl(VertxOptions options, Handler<AsyncResult<Vertx>> resultHandler) {
+    //省略若干代码
+    ...
+    this.sharedData = new SharedDataImpl(this, clusterManager);
+    //local模式的话， clusterManager为null。
+  }
+
+
+public interface SharedData {
+  //获取集群的map，如果没有集群管理器，将throw exception
+  <K, V> void getClusterWideMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> resultHandler);
+  
+  //获取异步map，如果没有集群管理器，获取的是local模式的异步map
+  <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> resultHandler);
+  
+  //获取lock，如果没有集群管理器，获取的是local模式的lock
+  void getLock(String name, Handler<AsyncResult<Lock>> resultHandler);
+
+  //在特定时间内获取lock，如果没有集群管理器，获取的是local模式的lock
+  void getLockWithTimeout(String name, long timeout, Handler<AsyncResult<Lock>> resultHandler);
+
+  //获取counter， 如果没有集群管理器，获取的是local模式的counter
+  void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler);
+  
+  //获取localMap
+  <K, V> LocalMap<K, V> getLocalMap(String name);
+
+}
+可以看到sharedData提供的api非常简洁，不得不说vert.x的api设计很棒。
+
+接着看sharedData的实现类sharedDataImpl
+
+public class SharedDataImpl implements SharedData {
+  
+  //sharedData是在整个vert.x实例中共享，所以会有并发问题，这里交给了ConcurrentHashMap
+  //来处理并发问题。所以sharedData提供的api可以放心大胆的用。
+  
+  //正在因为存储到ConcurrentHashMap，所以sharedData的数据可以在整个vert.x共享。
+
+  //这里所有ConcurrentHashMap中的数据也是需要线程安全的。
+
+  //获取lock的默认时间 单位：ms
+  private static final long DEFAULT_LOCK_TIMEOUT = 10 * 1000;
+  
+  private final VertxInternal vertx;
+  //集群管理器
+  private final ClusterManager clusterManager;
+  
+  //local模式的AsyncMap存储在localAsyncMaps 
+  private final ConcurrentMap<String, LocalAsyncMapImpl<?, ?>> localAsyncMaps = new ConcurrentHashMap<>();
+  
+  //local模式的Lock存储在localLocks
+  private final ConcurrentMap<String, AsynchronousLock> localLocks = new ConcurrentHashMap<>();
+  
+  //local模式的Counter存储在localCounters 
+  private final ConcurrentMap<String, Counter> localCounters = new ConcurrentHashMap<>();
+  
+  //localmap存储在localMaps
+  private final ConcurrentMap<String, LocalMap<?, ?>> localMaps = new ConcurrentHashMap<>();
+
+  public SharedDataImpl(VertxInternal vertx, ClusterManager clusterManager) {
+    this.vertx = vertx;
+    this.clusterManager = clusterManager;
+  }
+
+}
+到这一步，sharedData的实现还是很简单的。
+
+接着分析AsyncMap
+
+2.  AsyncMap
+
+public class SharedDataImpl implements SharedData {
+
+public <K, V> void getAsyncMap(String name, 
+                      Handler<AsyncResult<AsyncMap<K, V>>> resultHandler) {
+    Objects.requireNonNull(name, "name");
+    Objects.requireNonNull(resultHandler, "resultHandler");
+    //判断集群管理器是否为null，null：local模式
+    if (clusterManager == null) {
+      //这里委托给内部方法
+      getLocalAsyncMap(name, resultHandler);
+    //cluster模式
+    } else {
+      clusterManager.<K, V>getAsyncMap(name, ar -> {
+        if (ar.succeeded()) {
+          // Wrap it
+          resultHandler.handle(Future.
+                   succeededFuture(new WrappedAsyncMap<K, V>(ar.result())));
+        } else {
+          resultHandler.handle(Future.failedFuture(ar.cause()));
+        }
+      });
+    }
+  }
+
+  private <K, V> void getLocalAsyncMap(String name, 
+               Handler<AsyncResult<AsyncMap<K, V>>> resultHandler) {
+    //就是从localAsyncMaps中获取数据
+    //接着来看LocalAsyncMapImpl这个类。
+    LocalAsyncMapImpl<K, V> asyncMap = (LocalAsyncMapImpl<K, V>) localAsyncMaps
+                      .computeIfAbsent(name, n -> new LocalAsyncMapImpl<>(vertx));
+    //WrappedAsyncMap这个类，就是简单包装了一下，就是做了入参的参数校验
+    resultHandler.handle(Future.succeededFuture(new WrappedAsyncMap<>(asyncMap)));
+  }
+}
+
+//AsyncMap的数据储存还是委托为了ConcurrentHashMap
+//不同的是存取map数据通过回调的方式（这里的回调是同步的）
+
+//AsyncMap很重要的一点就是实现有时间期限数据的存储。所以value再进一步存储到Holder中，
+//由holder还完成时间期限的工作。
+
+public class LocalAsyncMapImpl<K, V> implements AsyncMap<K, V> {
+
+  private final Vertx vertx;
+  //map存储数据
+  private final ConcurrentMap<K, Holder<V>> map;
+
+  public LocalAsyncMapImpl(Vertx vertx) {
+    this.vertx = vertx;
+    map = new ConcurrentHashMap<>();
+  }
+
+ //LocalAsyncMapImpl中的内部类
+ private static class Holder<V> {
+    final V value;
+
+    //定时器的id
+    final long timerId;
+
+    //Time To Live 生存时间时长
+    final long ttl;
+
+    //设置值时的时间戳， now - timestamp > ttl,则过期
+    final long timestamp;
+    
+    Holder(V value) {
+      Objects.requireNonNull(value);
+      this.value = value;
+      //ttl为0， 则没有设置时间期限
+      timestamp = ttl = timerId = 0;
+    }
+    Holder(V value, long timerId, long ttl, long timestamp) {
+      Objects.requireNonNull(value);
+      if (ttl < 1) {
+        throw new IllegalArgumentException("ttl must be positive: " + ttl);
+      }
+      this.value = value;
+      this.timerId = timerId;
+      this.ttl = ttl;
+      this.timestamp = timestamp;
+    }
+    
+    //判断是否有设置时间期限的value
+    boolean expires() {
+      return ttl > 0;
+    }
+    
+    //判断是否 没过期。
+    boolean hasNotExpired() {
+      //如果这里没有设置时间期限的话，一直返回true（即没过期）
+      return !expires() ||
+          //如果有设置时间期限的话，（当前的时间戳 - 设置值的时间戳）< ttl时，则没过期
+          MILLISECONDS.convert(System.nanoTime() - timestamp, NANOSECONDS) < ttl;
+    }
+  }
+
+  //没有设置时间期限的put
+  public void put(final K k, final V v, Handler<AsyncResult<Void>> resultHandler) {
+    Holder<V> previous = map.put(k, new Holder<>(v));
+    
+    //上个元素，且上一个元素上有设置时间期限
+    if (previous != null && previous.expires()) {
+      //取消上个元素的定时器
+      vertx.cancelTimer(previous.timerId);
+    }
+    //响应回调
+    resultHandler.handle(Future.succeededFuture());
+  }
+
+  //有设置时间期限的put
+  public void put(K k, V v, long timeout, 
+                      Handler<AsyncResult<Void>> completionHandler) {
+    long timestamp = System.nanoTime();
+    //设置定时任务， 用于清除过期数据，调用removeIfExpired方法
+    long timerId = vertx.setTimer(timeout, l -> removeIfExpired(k));
+    //创建holder并put到map中
+    Holder<V> previous = map.put(k, new Holder<>(v, timerId, timeout, timestamp));
+    if (previous != null && previous.expires()) {
+      vertx.cancelTimer(previous.timerId);
+    }
+    //响应回调
+    completionHandler.handle(Future.succeededFuture());
+  }
+  
+  //清除过期数据
+  private void removeIfExpired(K k) {
+    //判断k是否存在，是的话执行后面这个lambda
+    map.computeIfPresent(k, (key, holder) -> holder.hasNotExpired() ? holder : null);
+  }
+  
+ //获取数据
+  public void get(final K k, Handler<AsyncResult<V>> resultHandler) {
+    Holder<V> h = map.get(k);
+    //获取到holder之后，判断有没有过期
+    if (h != null && h.hasNotExpired()) {
+      resultHandler.handle(Future.succeededFuture(h.value));
+    } else {
+      resultHandler.handle(Future.succeededFuture());
+    }
+  }
+}
+通过AsyncMap上面的分析，AsyncMap的ttl是通过vert.x的setTimer定时器来完成的。
+
+接着分析Lock
+
+3. Lock
+
+public class SharedDataImpl implements SharedData {
+  
+ public void getLock(String name, Handler<AsyncResult<Lock>> resultHandler) {
+    Objects.requireNonNull(name, "name");
+    Objects.requireNonNull(resultHandler, "resultHandler");
+    //获取lock默认时长，10s
+    getLockWithTimeout(name, DEFAULT_LOCK_TIMEOUT, resultHandler);
+  }
+
+  public void getLockWithTimeout(String name, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
+    Objects.requireNonNull(name, "name");
+    Objects.requireNonNull(resultHandler, "resultHandler");
+    Arguments.require(timeout >= 0, "timeout must be >= 0");
+    if (clusterManager == null) {
+      //local模式
+      getLocalLock(name, timeout, resultHandler);
+    } else {
+      //cluster模式
+      clusterManager.getLockWithTimeout(name, timeout, resultHandler);
+    }
+  }
+  
+  private void getLocalLock(String name, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
+    //从localLocks获取lock，如果lock不存在，执行后面lambda创建lock。
+    AsynchronousLock lock = localLocks.computeIfAbsent(name, n -> new AsynchronousLock(vertx));
+    //timeout时间期间内获取lock。
+    lock.acquire(timeout, resultHandler);
+  }
+}
+
+public class AsynchronousLock implements Lock {  
+  private final Vertx vertx;
+  //等待的节点队列，更确切的说法是通知队列。因为这里不会发生阻塞等待
+  private final Queue<LockWaiter> waiters = new LinkedList<>();
+  //代表是否拥有锁
+  private boolean owned;
+  
+  public void acquire(long timeout, Handler<AsyncResult<Lock>> resultHandler) {
+    //获取vert.x执行的上下文，一般情况时eventloopContext
+    Context context = vertx.getOrCreateContext();
+    doAcquire(context, timeout, resultHandler);
+  }
+ 
+  public void doAcquire(Context context, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
+    //并发问题通过加锁方式解决
+    synchronized (this) {
+      //判断锁是否在用，
+      if (!owned) {
+        //设置当前线程为锁的拥有者
+        owned = true;
+        //获取锁成功，回调通过context来通知
+        lockAcquired(context, resultHandler);
+      } else {
+       //锁已经被其他线程拥有，则加入通知队列中
+        waiters.add(new LockWaiter(this, context, timeout, resultHandler));
+      }
+    }
+  }
+  //重新加入到eventloop执行回调函数
+  private void lockAcquired(Context context, 
+                    Handler<AsyncResult<Lock>> resultHandler) {
+    context.runOnContext(v -> resultHandler.handle(Future.succeededFuture(this)));
+  }
+
+ //接着分析加入通知队列，看LockWaiter构造方法
+
+  private static class LockWaiter {
+    final AsynchronousLock lock;
+    final Context context;
+    final Handler<AsyncResult<Lock>> resultHandler;
+    //过期标记
+    volatile boolean timedOut;
+    //是否得到过锁的标记
+    volatile boolean acquired;
+
+    LockWaiter(AsynchronousLock lock, Context context, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
+      this.lock = lock;
+      this.context = context;
+      this.resultHandler = resultHandler;   
+      if (timeout != Long.MAX_VALUE) {
+        //通过setTimer设置超时
+        context.owner().setTimer(timeout, tid -> timedOut());
+      }
+    }
+
+    void timedOut() {
+      synchronized (lock) {
+        //定时任务触发。设置超时任务到触发期间，都没有获取过锁，
+        if (!acquired) {
+          //超时， timedOut用于release方法中做清除节点操作
+          timedOut = true;
+          //且通知调用者。 稍后再release方法中做清除节点的工作。
+          context.runOnContext(v -> resultHandler.handle(Future.failedFuture(new VertxException("Timed out waiting to get lock"))));
+        }
+      }
+    }
+}
+
+接着分析释放锁和通知等待者
+  public synchronized void release() {
+    //从队列头部开始获取没有timedOut的等待节点
+    LockWaiter waiter = pollWaiters();
+    if (waiter != null) {
+      waiter.acquire(this);
+    } else {
+      //waiter == null， 没有等待节点， 设置owned=false。则锁空闲
+      owned = false;
+    }
+  }
+
+  private LockWaiter pollWaiters() {
+    while (true) {
+      //remove & get， 这里做清除节点的工作。
+      LockWaiter waiter = waiters.poll();
+      if (waiter == null) {
+        return null;
+      } else if (!waiter.timedOut) {
+        return waiter;
+      }
+    }
+  }
+
+  void acquire(AsynchronousLock lock) {
+     //标记当前节点获取锁成功，acquired属性用于上面的timedOut方法
+      acquired = true;
+     //回调通知调用者获取锁成功。
+      lock.lockAcquired(context, resultHandler);
+    }
+  }
+获取Lock的过程，并发部分通过synchronized来解决。这里其实加锁倒不用担心性能问题，因为加锁过程很短。就是往linkedList添加数据。然后异步回调等待通知。不会一直阻塞线程。
+
+只有获得lock的线程才能执行。对了，获得lock执行完之后， 记得release。
+
+相比于ReentrantLock等lock的优点就是不会阻塞线程。
+
+
+
+4. 接着分析计数器Counter
+
+ public void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
+    Objects.requireNonNull(name, "name");
+    Objects.requireNonNull(resultHandler, "resultHandler");
+    if (clusterManager == null) {
+      //local模式
+      getLocalCounter(name, resultHandler);
+    } else {
+      clusterManager.getCounter(name, resultHandler);
+    }
+  }
+
+  private void getLocalCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
+    //从sharedData局部变量localCounters中获取counter
+    //如果不存在，执行lambda表达式创建Counter。
+    Counter counter = localCounters.computeIfAbsent(name, n -> new AsynchronousCounter(vertx));
+    //重新加入到context（一般情况是eventloopContext）执行回调函数
+    Context context = vertx.getOrCreateContext();
+    context.runOnContext(v -> resultHandler.handle(Future.succeededFuture(counter)));
+  }
+
+接着看AsynchronousCounter这个类
+//很简单，把计数的功能委托给AtomicLong来实现。
+//而AtomicLong通过自旋+cas+volatile方式还实现线程安全的计数。
+//这里比较简单，就不再多啰嗦了。
+public class AsynchronousCounter implements Counter {
+  private final VertxInternal vertx;
+  private final AtomicLong counter;
+
+  public AsynchronousCounter(VertxInternal vertx) {
+    this.vertx = vertx;
+    this.counter = new AtomicLong();
+  }
+}
+
+
+5. 最后分析localMap
+
+ public <K, V> LocalMap<K, V> getLocalMap(String name) {
+     //从sharedData中的局部变量localMaps获取LocalMap，
+     //如果不存在，执行lambda计算，创建LocalMapImpl
+     return (LocalMap<K, V>) localMaps.computeIfAbsent(name, 
+                           n -> new LocalMapImpl<>(n, localMaps));
+  }
+
+class LocalMapImpl<K, V> implements LocalMap<K, V> {
+  //sharedData中那个局部变量localMaps，用于清除当前LocalMap
+  private final ConcurrentMap<String, LocalMap<?, ?>> maps;
+  //用于从LocalMaps（maps）清除当前local
+  private final String name;
+  //实际存储数据的map
+  private final ConcurrentMap<K, V> map = new ConcurrentHashMap<>();
+
+  LocalMapImpl(String name, ConcurrentMap<String, LocalMap<?, ?>> maps) {
+    this.name = name;
+    this.maps = maps;
+  }
+  //往localmap添加数据时，做参数校验
+  public V put(K key, V value) {
+    checkType(key);
+    checkType(value);
+    return map.put(key, value);
+  }
+
+ //从localmap获取数据时，对value进行copy。
+ public V get(Object key) {
+    return copyIfRequired(map.get(key));
+  }
+}
+  //包装类,例如Integer等，String本身是immtuable，所以是线程安全的，不用copy
+  static <T> T copyIfRequired(T obj) {
+    if (obj instanceof JsonObject) {
+      return (T)((JsonObject)obj).copy();
+    } else if (obj instanceof JsonArray) {
+      return (T) ((JsonArray) obj).copy();
+    } else if (obj instanceof byte[]) {
+      //Copy it
+      byte[] bytes = (byte[]) obj;
+      byte[] copy = new byte[bytes.length];
+      System.arraycopy(bytes, 0, copy, 0, bytes.length);
+      return (T) copy;
+    } else if (obj instanceof Buffer) {
+      //Copy it
+      return (T) ((Buffer) obj).copy();
+    } else {
+      return obj;
+    }
+  }
+最后来说说localmap中获取数据时做copy操作。即可以保证使用value时的线程安全。
+
+当自己实现Shareable的接口的类放到localmap不会有copy工作，当然线程安全工作就得由自己保证了。
+
+最后说说map中的computeIfxxx方法都是有延迟初始化的作用。
+
+总结：
+
+毛线，好像没啥可总结的。
+如果有写的不好的地方，欢迎指正。
+本文基于vertx.3.5.1
+最近换了个工作，哎， 又干上了spring。vert.x就得业余时间玩玩了。伤心ing...
+
+由于对集群管理器不是很熟悉。下面有可能跳过cluster模式的sharedData的分析，就是到了eventbus的分析。

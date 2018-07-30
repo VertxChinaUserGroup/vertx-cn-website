@@ -7,6 +7,8 @@
   "refreshIndexPerSecond": 60,
   /*服务端口*/
   "serverPort": 8083,
+  /*EventBus监听地址*/
+  "eventbusAddress": "search",
   /*返回的关键词前置标签,默认红色字体*/
   "keywordPreTag": "<font color='red'>",
   /*返回的关键词后置标签,要和前置标签闭合*/

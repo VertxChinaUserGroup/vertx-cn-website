@@ -1,6 +1,7 @@
 package io.gitlab.leibnizhu.vertXearch
 
-import io.gitlab.leibnizhu.vertXearch.Constants.{CONTENTS, ID, init}
+import io.gitlab.leibnizhu.vertXearch.engine.{Indexer, Searcher}
+import io.gitlab.leibnizhu.vertXearch.utils.Constants.{CONTENTS, ID, init}
 import io.vertx.scala.core.{Future, Vertx}
 import org.apache.lucene.document.Document
 import org.scalatest.FlatSpec

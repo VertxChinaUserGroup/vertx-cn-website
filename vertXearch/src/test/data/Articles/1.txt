@@ -1,0 +1,780 @@
+vert.x-web的源码解析
+lileihanmeimei
+本来应该要写的是eventbus的源码分析的，但是Vert.x中国用户组（群号：515203212）的小伙伴们好像对vert.x-web深入了解的需求更大一些。所以就先分析vert.x-web的实现原理吧。 
+分析完之后发现篇幅较长，请耐心看完。
+如果哪里有写的不好的话，或者不好理解的地方，欢迎在评论区提出来，谢谢。
+vert.x-web主要的功能是路由，还有常用的http相关工具（例如：BodyHandler，SessionHandler）。 本文主要围绕vert.x-web是如何实现路由来展开分析。
+
+vert.x-web最主要的是3个类： Router， Route，RoutingContext。
+
+本文分为以下几部分展开分析：
+
+Router的api接口和实现类RouterImpl
+Route的api接口和实现类RouteImpl
+RoutingContext的api接口和实现类RoutingContextImpl
+路由过程
+一.  先来看Router部分。
+
+Router其实就是Route的容器， 里面装载了全部的Route。当request到来时，通过Router匹配容器里的多个Route。Router把路由的工作丢给RoutingContext做了。
+
+Router相关的api基本都是创建Route（路由点）的。
+
+例如，route()，get(), get(path),  还有创建正则请求路径的Route等等。
+
+除了这些说些比较重要的。
+
+public interface Router {
+   //省略若干代码...
+  //路由的入口方法。request进来之后，匹配对应的Route
+  void accept(HttpServerRequest request);
+  
+  //在当前router中，挂载子router。
+  Router mountSubRouter(String mountPoint, Router subRouter);
+  
+  //为当前router设置异常处理器
+  Router exceptionHandler(@Nullable Handler<Throwable> exceptionHandler);
+  
+  //这两个方法是用在子router，不能直接调用。
+  void handleContext(RoutingContext context);
+  void handleFailure(RoutingContext context);
+}
+接着看看RouterImpl实现。
+
+public class RouterImpl implements Router {
+  //省略若干代码...
+  private final Vertx vertx;
+  //存储Route用的是skiplist，相比于List，时间复杂度从O(n)降低到O(lgn)。
+  //并且用的是线程安全的skiplist
+  //routeComparator是排序比较器。
+  private final Set<RouteImpl> routes = new ConcurrentSkipListSet<>(routeComparator);
+  //用于route的序号，保证route在routes的顺序。
+  //排序前面的route的order比较小。
+  private final AtomicInteger orderSequence = new AtomicInteger();
+  //异常处理器，待会分析该异常处理器的调用处。
+  private Handler<Throwable> exceptionHandler;
+
+  public RouterImpl(Vertx vertx) {
+    this.vertx = vertx;
+  } 
+  //随便放出点创建route的代码。此时并未将route加入routes容器中，
+  //而是为route设置handler时才加到routes容器，稍后分析
+  public Route route(HttpMethod method, String path) {
+    return new RouteImpl(this, orderSequence.getAndIncrement(), method, path);
+  }
+  public Route route(String path) {
+    return new RouteImpl(this, orderSequence.getAndIncrement(), path);
+  }
+  
+  public void accept(HttpServerRequest request) {
+    //...
+    //请求委托为RoutingContext，由RoutingContext来实现路由。
+    //这里稍后解释，只需要记住accept方法是路由的入口方法。
+    new RoutingContextImpl(null, this, request, routes).next();
+  }
+
+  //分析挂载，所谓的挂载就是把一个有多个子Route的容器Router放到另一个Router（主router）
+  //mountPoint,挂载点，
+  public Router mountSubRouter(String mountPoint, Router subRouter) {
+    //挂载点的路径必须是确定的，不能用通配符和模式匹配
+    if (mountPoint.endsWith("*")) {
+      throw new IllegalArgumentException("Don't include * when mounting subrouter");
+    }
+    if (mountPoint.contains(":")) {
+      throw new IllegalArgumentException("Can't use patterns in subrouter mounts");
+    }
+    //这里就是创建route，然后request达到handler时，转交给subRouter的handleContext。
+    route(mountPoint + "*").handler(subRouter::handleContext)
+                           .failureHandler(subRouter::handleFailure);
+    return this;
+  }
+
+
+  public void handleContext(RoutingContext ctx) {
+    //这里创建一个新的RoutingContext，并且把原来的routingContext包装进去，
+    //还有子router(subRouter)的routes也传进去，然后调用next()在subRouter中路由。
+    new RoutingContextWrapper(getAndCheckRoutePath(ctx), ctx.request(), routes, ctx)
+          .next();
+  }
+  public void handleFailure(RoutingContext ctx) {
+    new RoutingContextWrapper(getAndCheckRoutePath(ctx), ctx.request(), routes, ctx)
+     .next();
+  }
+//getAndCheckRoutePath获取挂载路径
+ private String getAndCheckRoutePath(RoutingContext ctx) {
+    //currentRoute的路径只有挂载路径，在mountSubRouter方法中可以看的出来。
+    Route currentRoute = ctx.currentRoute();
+    String path = currentRoute.getPath();
+    return path;
+  }
+}
+先大体看看RouterImpl实现过程，看完RoutingContext和Route再回头来看看Router。
+
+再扯扯subRouter的作用。
+
+如果把所有的route都放在一个Router中，当前功能点多的时候，可能就会有好几百个Route。那么请求路由到排在后面Route时，整个路由的开销可能会比较大点。
+
+使用subRouter，可以把同个模块的功能放到一个subRouter下面。
+
+例如： 用户添加，修改，删除，新增等等。
+
+//示例代码
+Router mainRouter = Router.router(vertx);
+Router userRouter = Router.router(vertx);
+userRouter.get("/:userId")...
+userRouter.post()...
+userRouter.delete("/:userId")...
+userRouter.put("/:userId")...
+//挂载到主router上
+mainRouter .mountSubRouter("/user", userRouter);
+//其他模块亦是如此, 最后就是mainRouter挂载了多个功能模块的subRouter
+//当前subRouter也还可以继续挂subRouter 一般没必要 二级基本能满足绝大多数情况了
+
+
+二. 接下来分析Route和它的实现类RouteImpl
+
+上面分析我们知道，Route的创建是在Router调用route或get或post等等时创建的。
+
+route常用的方法一般就是设置一下handler。链式调用的方式
+
+router.route().handler(handler);
+
+相关方法也不少，主要就是设置各种http的参数。启动关闭Route（默认是启动的），还有让当前的Route在Router容器里排到最后的last()方法。
+
+其中最重要的也是最复杂的，就是设置请求路径path。
+
+public interface Route {
+  //省略若干代码...
+ //一般不用此方法，直接在创建route的时候设置
+ Route path(String path);
+ //route的序号，一般就是用Router中的orderSequence累加生成的。
+ Route order(int order);
+ 
+ Route last();
+ //启用
+ Route enable();
+ //关闭
+ Route disable();
+}
+其他的就是设置一下http参数，这里就不扯犊子了。
+
+接下来看继续分析Route的实现类RouteImpl
+
+public class RouteImpl implements Route {
+  //tm的，属性还真不少，没事，一个一个说
+
+  //存储当前route的router，实例化时传入
+  private final RouterImpl router;
+  //http请求方法，默认是支持全部
+  private final Set<HttpMethod> methods = new HashSet<>();
+  //媒体类型
+  private final Set<MIMEHeader> consumes = new LinkedHashSet<>();
+  private final Set<MIMEHeader> produces = new LinkedHashSet<>();
+  //请求路径
+  private String path;
+  //在router中的序号，一般在实例化时传入
+  private int order;
+  //启用状态
+  private boolean enabled = true;
+  //handler集合，一个route可以设置多个handler，但必须得手动调用next方法
+  private List<Handler<RoutingContext>> contextHandlers;
+  //failureHandlers
+  private List<Handler<RoutingContext>> failureHandlers;
+  //当前route是否添加到router时的状态
+  private boolean added;
+  //正则
+  private Pattern pattern;
+  //restful路径中的key集合，例如：/user/:userId， userId就会存储到groups中
+  private List<String> groups;
+  //是否正常化的路径。 例如： user/add, 前面少了个/, true时，会在路由匹配时加上/
+  private boolean useNormalisedPath = true;
+  //使用正则路径的groups。跟groups差不多。稍后分析。
+  private Set<String> namedGroupsInRegex = new TreeSet<>();
+  
+  //设置handler
+  public synchronized Route handler(Handler<RoutingContext> contextHandler) {
+    //把handler加到集合中。
+    this.contextHandlers.add(contextHandler);
+    checkAdd();
+    return this;
+  }
+  private void checkAdd() {
+    if (!added) {
+      //把当前route加到router容器中，并且修改added的状态为已加入状态
+      //failureHandler方法也是如此，也是设置handler时才加入到router容器中。
+      //至于为什么这步才加入到router中，就自己猜猜吧，哈哈哈。
+      router.add(this);
+      added = true;
+    }}
+   //设置路径，构造方法中也调用checkPath和setPath方法，这两个方法才是关键。
+   public synchronized Route path(String path) {
+    checkPath(path);
+    setPath(path);
+    return this;
+  }
+  //这里很简单，检查了一下path是否以/开头。
+  private void checkPath(String path) {
+    if ("".equals(path) || path.charAt(0) != '/') {
+      throw new IllegalArgumentException("Path must start with /");
+    }
+  }
+
+  //是否是精确请求路径的标记，true: 请求路径中不包括 : 和 *
+  private boolean exactPath;
+
+  private void setPath(String path) {
+    //包含：即restful方式的请求， 那么创建正则。
+    if (path.indexOf(':') != -1) {
+      createPatternRegex(path);
+      this.path = path;
+    } else {
+      //不是以*结尾，那么就是精确匹配了
+      if (path.charAt(path.length() - 1) != '*') {
+        exactPath = true;
+        this.path = path;
+      } else {
+        //这里多说一句，/user/*/add*/name, 像这种是没用的。
+        exactPath = false;
+        //把*去掉，非精确匹配，那么请求时的路径是以path开头就能匹配了
+        this.path = path.substring(0, path.length() - 1);
+      }}}
+
+  //凌晨2:30点，先睡了，身体要紧。
+  //接下看看怎么创建restful模式的正则
+
+  //该正则的作用转义()$.这四个字符，即在字符前面加\
+  private static final Pattern RE_OPERATORS_NO_STAR = 
+         Pattern.compile("([\\(\\)\\$\\+\\.])");
+  private void createPatternRegex(String path) {
+    path = RE_OPERATORS_NO_STAR.matcher(path).replaceAll("\\\\$1");
+    //以*结尾的话，将*换成.*  即以任意字符结尾。 
+    if (path.charAt(path.length() - 1) == '*') {
+      path = path.substring(0, path.length() - 1) + ".*";
+    }
+    举例路径： /user/:userId/:name 那么下面的正则将会匹配到userId和name
+    //扫描路径中以:开头的字符串。
+    Matcher m = Pattern.compile(":([A-Za-z][A-Za-z0-9_]*)").matcher(path);
+    StringBuffer sb = new StringBuffer();
+    //存储路径的key 
+    groups = new ArrayList<>();
+    int index = 0;
+    //关于正则的知识了，就是path的匹配的值替换一下加到sb中。
+    while (m.find()) {
+      String param = "p" + index;
+      String group = m.group().substring(1);
+      if (groups.contains(group)) {
+        throw new IllegalArgumentException("Cannot use identifier " + group + " more than once in pattern string");
+      }
+      m.appendReplacement(sb, "(?<" + param + ">[^/]+)");
+      //把"userId", "name", 加到groups, groups在匹配Route的时候用
+      groups.add(group);
+      index++;
+    }
+    m.appendTail(sb);
+    path = sb.toString();
+    //以举例路径为例， 此时path=/user/(?<p0>[^/]+)/(?<p1>[^/]+)
+    //这里我不懂路径为什么要变成这样，但是并不影响分析。懂的朋友麻烦请教一下。
+    //最后以path作为regex进行编译正则，pattern在匹配Route的时候使用。
+    pattern = Pattern.compile(path);
+  }
+
+ //先分析匹配route的方法，待会再RoutingContext
+  synchronized boolean matches(RoutingContextImplBase context, 
+         String mountPoint, boolean failure) {
+    //failure是通过调用RoutingContext的fail方法设置。
+    //如果当前的RoutingContext的状态是失败的，且当前Route的failureHandler已经超过index了
+    //如果当前的RoutingContext的状态是正常的，且当前Route的handler已经超过index了
+    //那么匹配失败
+    if (failure && !hasNextFailureHandler(context) || 
+           !failure && !hasNextContextHandler(context)) {
+      return false;
+    }
+    //未启用， 匹配失败
+    if (!enabled) {
+      return false;
+    }
+    HttpServerRequest request = context.request();
+    //设置了请求方法，但是请求的方法不包括在设置的请求方法中，匹配失败。
+    if (!methods.isEmpty() && !methods.contains(request.method())) {
+      return false;
+    }
+    //常规路径匹配，即非正则匹配。pathMatches（下面有分析）返回false的话，匹配失败。
+    if (path != null && pattern == null && !pathMatches(mountPoint, context)) {
+      return false;
+    }
+    //正则路径
+    if (pattern != null) {
+      String path = useNormalisedPath ? Utils.normalizePath(context.request().path()) : context.request().path();
+      //去掉挂载路径， 正则的路径都是以route中的path来匹配的。
+      if (mountPoint != null) {
+        path = path.substring(mountPoint.length());
+      }
+      Matcher m = pattern.matcher(path);
+      if (m.matches()) {
+        if (m.groupCount() > 0) {
+          if (groups != null) {
+            for (int i = 0; i < groups.size(); i++) {
+              /取出setPath时，添加到groups中的key
+              final String k = groups.get(i);
+              String undecodedValue;
+              // We try to take value in three ways:
+              // 1. group name of type p0, p1, pN (most frequent and used by vertx params)
+              // 2. group name inside the regex
+              // 3. No group name
+              try {
+                //取出路径中的值，按照上述的方式去
+                undecodedValue = m.group("p" + i);
+              } catch (IllegalArgumentException e) {
+                try {
+                  undecodedValue = m.group(k);
+                } catch (IllegalArgumentException e1) {
+                  // Groups starts from 1 (0 group is total match)
+                  undecodedValue = m.group(i + 1);
+                }
+              }
+              //group取出来的值作为key, 从path中取出来的值作为value，添加到
+              //RoutingContext的PathParams中（其中就是HashMap）
+              addPathParam(context, k, undecodedValue);
+            }
+          } else {
+           //由于篇幅有限，关于正则路径的就不展开分析了。
+          } 
+    //省略若干代码...
+    return true;
+    }
+ 
+  //匹配路径
+  private boolean pathMatches(String mountPoint, RoutingContext ctx) {
+    String thePath = mountPoint == null ? path : mountPoint + path;
+    String requestPath;
+    if (useNormalisedPath) { //对请求路径做一些处理
+      requestPath = Utils.normalizePath(ctx.request().path());
+    } else {
+      requestPath = ctx.request().path();
+      if (requestPath == null) {
+        requestPath = "/";
+      }
+    }
+    if (exactPath) {
+      //精准匹配，如果路径后面有/，先移除，然后调用
+      return pathMatchesExact(requestPath, thePath);
+    } else {
+      //非精准匹配，
+      if (thePath.endsWith("/") && requestPath.equals(removeTrailing(thePath))) {
+        //进入这个if分支的话， 当初设置path时， /xxx/xxx/* 这样类型的。
+        //如果请求路径刚好是 /xxx/xxx时，有这个if分支才能匹配成功
+        return true;
+      }
+      //只要请求的路径以route中设置的path开头就算匹配成功。
+      return requestPath.startsWith(thePath);
+    }
+  }
+
+}
+RouteImpl涉及到的代码比较多， 代码也比较核心，所以进行长篇幅的分析。
+
+先总结的一下Route的重点。
+
+handler是保存到contextHandlers的ArrayList中，failureHandler保存到failureHandlers的ArrayList中。
+RouteImpl添加到Router容器中时设置handler或failureHandler的时候。
+route的path设置过程和route匹配过程。（敲黑板）
+
+
+三. 接下来来分析RoutingContext
+
+RoutingContext接口涉及到的接口很多，所以挑比较重要的来分析。
+
+RoutingContext，顾名思义，路由上下文嘛， 就是保存路由整个过程的一些信息，辅助路由。
+
+public interface RoutingContext {
+
+//匹配下一个route
+void next();
+
+//设置当前路由状态为失败的，并重新route找下一个失败的route或者当前route的failureHandler
+void fail(int statusCode);
+void fail(Throwable throwable);
+
+//往RoutingContext存取，移除数据
+RoutingContext put(String key, Object obj);
+<T> T get(String key);
+<T> T remove(String key);
+//获取RoutingContext全部数据
+Map<String, Object> data();
+
+//获取请求体
+String getBodyAsJson();
+//getBodyAsXXX等等
+
+//重新route，相当于servlet中的forward
+void reroute(HttpMethod method, String path);
+
+//restful模式中的路径参数 例： /user/:userId/:name， userId和name
+Map<String, String> pathParams();
+String pathParam(String name);
+
+//请求路径的参数。例如：/user?name=wang007&age=18&hobby=girl
+MultiMap queryParams();
+List<String> queryParam(String query);
+}
+其他的比较简单或者比较很少的就不说了，还有例如Session，Cookie等这些可以另起一个章节来说。
+
+RoutingContext在每次请求来到时创建，在Router的accept方法可以看出来。
+
+接下来分析RoutingContext实现类中的属性
+
+public abstract class RoutingContextImplBase implements RoutingContext {
+  //route容器，Router中传入
+  private final Set<RouteImpl> routes;
+  //挂载点。 默认是null。
+  protected final String mountPoint;
+ 
+  protected final HttpServerRequest request;
+  //从routes创建的迭代器
+  protected Iterator<RouteImpl> iter;
+  //当前匹配上route  这个会变的 下个route匹配上的 currentRoute就变成下一个route
+  protected RouteImpl currentRoute;
+  //当前的handler索引。 当匹配上下一个route时，索引重计（设为0）
+  protected AtomicInteger currentRouteNextHandlerIndex;
+  protected AtomicInteger currentRouteNextFailureHandlerIndex;
+  //看下构造方法中创建的属性
+  protected RoutingContextImplBase(String mountPoint, HttpServerRequest request, Set<RouteImpl> routes) {
+    this.mountPoint = mountPoint;
+    //用HttpServerRequestWrapper包装，为了用在reroute方法，重设path和method
+    //默认情况下request是不支持重设path和tmethod，所以只能用这种情况偷鸡一下
+    this.request = new HttpServerRequestWrapper(request);
+    this.routes = routes;
+    this.iter = routes.iterator();
+    currentRouteNextHandlerIndex = new AtomicInteger(0);
+    currentRouteNextFailureHandlerIndex = new AtomicInteger(0);
+  }
+}
+
+public class RoutingContextImpl extends RoutingContextImplBase {
+  private final RouterImpl router;
+
+  //RoutingContext的put，get数据存储处， 数据类型：HashMap
+  private Map<String, Object> data;
+
+  //restful模式中的路径参数,  数据类型：HashMap
+  private Map<String, String> pathParams;
+
+  //路径请求参数， 一key多value  数据类型：CaseInsensitiveHeaders
+  private MultiMap queryParams;
+
+  //用于headersEndHandlers和bodyEndHandlers中key,为了保证顺序。
+  private AtomicInteger handlerSeq = new AtomicInteger();
+  //response响应完headers时调用, 数据类型：TreeMap
+  private Map<Integer, Handler<Void>> headersEndHandlers;
+  //response响应完body时调用, 数据类型：TreeMap
+  private Map<Integer, Handler<Void>> bodyEndHandlers;
+
+  //调用fail方法设置的failure
+  private Throwable failure;
+  //调用fail方法设置的statusCode 
+  private int statusCode = -1;
+
+  //常规化路径，
+  private String normalisedPath;
+
+  private String acceptableContentType;
+  private ParsableHeaderValuesContainer parsedHeaders;
+
+  //这些以后另起篇章再分析了
+  private Map<String, Cookie> cookies;
+  private Buffer body;
+  private Set<FileUpload> fileUploads;
+  private Session session;
+  private User user;
+
+  //next方法， 在下面路由过程分析
+  
+  //设置statusCode，并调用doFail方法  fail(Throwable t)也是类似。
+  public void fail(int statusCode) {
+    this.statusCode = statusCode;
+    doFail();
+  }
+  private void doFail() {
+    //重新设置route的迭代器，清空当前currentRoute
+    //iter有记录当前路由到哪个route的作用，从新设置，意味着从头开始重新路由一遍
+    this.iter = router.iterator();
+    currentRoute = null;
+    next();
+  }
+
+  //判断路由状态是否是失败的。
+  public boolean failed() {
+    return failure != null || statusCode != -1;
+  }
+  
+  //重新route   path中不能包含查询参数中 如果包含将会截断
+  public void reroute(HttpMethod method, String path) {
+    int split = path.indexOf('?');
+    if (split == -1) {
+      split = path.indexOf('#');
+    }
+    if (split != -1) {
+      log.warn("Non path segment is not considered: " + path.substring(split));
+      path = path.substring(0, split);
+    }
+    //设置reroute的method和path
+    ((HttpServerRequestWrapper) request).setMethod(method);
+    ((HttpServerRequestWrapper) request).setPath(path);
+    //清空之前请求的参数
+    request.params().clear();
+    normalisedPath = null;
+    //重置statusCode 失败状态码
+    statusCode = -1;
+    //清空之前请求解析的header
+    response().headers().clear();
+    //清除cookie信息
+    if (cookies != null) {
+      cookies.clear();
+    }
+    if (headersEndHandlers != null) {
+      headersEndHandlers.clear();
+    }
+    if (bodyEndHandlers != null) {
+      bodyEndHandlers.clear();
+    }
+    //重置失败异常
+    failure = null;
+    //从头开始路由，跟doFail方法一样
+    restart();
+  }
+}
+RoutingContext的属性和重要的方法也已经分析完了。
+
+接下来分析路由过程， 本文的重点， 路由通过next方法来完成的。
+
+四.  路由过程
+
+路由的调用过程。
+
+请求通过router.accept方法。
+ 然后在accept方法中调用RoutingContext的next方法。这个next方法就是我们可以handler也会经常调用next方法，表示匹配下一个route。
+在next方法中调用RoutingContext一个内部的iterateNext方法
+iterateNext方法中逐一调用route的matches方法（前面分析过了），返回true，代表匹配成功，就不再继续匹配了。除非你再手动调用RoutingContext的next方法，代表继续匹配下一个route，如果没有匹配上，那么就返回404， 即使你之前成功匹配过route。
+下面就围绕上面说的这几个点来展开分析。
+
+public void accept(HttpServerRequest request) {
+    //一次请求到来时，创建一个RoutingContext
+    //第一个参数是挂载点 这里没有挂载，所以是null，
+    //第二个参数router 第三个是request请求 第四个是装载route的容器
+    new RoutingContextImpl(null, this, request, routes).next();
+  }
+
+RoutingContext中的next
+public void next() {
+    //逐一匹配route  false: route容器中全部route都没匹配上 接着就调用checkHandleNoMatch
+    if (!iterateNext()) {
+      checkHandleNoMatch();
+    }
+  }
+  
+//先分析没匹配上怎么处理
+  private void checkHandleNoMatch() {
+  //这个if分支 至少之前是成功匹配过route的
+  //例如在处理handler时发生异常 或者手动调用RoutingContext.fail方法
+    if (failed()) {
+      unhandledFailure(statusCode, failure, router);
+    } else {
+    //这个分支代表的条件
+    // 1. 全部route都未匹配上 
+    //2.或者成功匹配过route 然后调用了RoutingContext.next方法 却没有再匹配上route
+   
+    //这里有个疑问 为什么在router中不提供一个route未匹配上的handler呢(即404) 
+    //就这样直接响应出去了
+    //当然解决方法也有，route.last().handler() 即往route容器最后面加一个route 
+    //匹配到该route时，则说明之前所有的route都没匹配上 那么就不会进去到这个else分支了。
+      response().setStatusCode(404);
+      if (request().method() == HttpMethod.HEAD) {
+        response().end();
+      } else {
+        response()
+                .putHeader(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=utf-8")
+                .end(DEFAULT_404);
+      }
+    }
+  }
+
+  //处理failure
+  protected void unhandledFailure(int statusCode, Throwable failure, RouterImpl router) {
+    //获取调用fail方法时设置statuCode
+    int code = statusCode != -1 ? statusCode : 500;
+    if (failure != null) {
+      //如果router有设置exceptionHandler的话 执行exceptionHandler
+      if (router.exceptionHandler() != null) {
+        router.exceptionHandler().handle(failure);
+      } else {
+        log.error("Unexpected exception in route", failure);
+      }
+    }
+    //如果未完成响应 
+    if (!response().ended()) {
+      try {
+        response().setStatusCode(code);
+      } catch (IllegalArgumentException e) {
+        // means that there are invalid chars in the status message
+        response()
+            .setStatusMessage(HttpResponseStatus.valueOf(code).reasonPhrase())
+            .setStatusCode(code);
+      }
+      response().end(response().getStatusMessage());
+    }
+  }
+
+//接着分析上next方法中iterateNext
+  protected boolean iterateNext() {
+    //判断是否是失败状态的路由
+    boolean failed = failed();
+    // route可以设置多个handler和failureHandler
+    // 即用户在handler中调用了next方法，先匹配当前route是否还有handler
+    if (currentRoute != null) {  //当前route不为空 即之前成功匹配过 
+      try {
+        //正常状态的路由，并且还存在下一个handler 那么执行下一个handler
+        if (!failed && currentRoute.hasNextContextHandler(this)) {
+          currentRouteNextHandlerIndex.incrementAndGet();
+          currentRoute.handleContext(this);
+          // 结束匹配
+          return true;
+         //失败状态的路由，并且还存在下一个failureHandler 那么执行下一个failureHandler 
+        } else if (failed && currentRoute.hasNextFailureHandler(this)) {
+          currentRouteNextFailureHandlerIndex.incrementAndGet();
+          currentRoute.handleFailure(this);
+          //结束匹配
+          return true;
+        }
+      } catch (Throwable t) {
+        if (!failed) { //正常状态的路由 调用fail方法 从头开始匹配失败状态的route
+          fail(t);
+        } else { //已经是失败状态的路由了 那么直接调用异常处理
+          //上面已经分析过此方法里 
+          unhandledFailure(-1, t, currentRoute.router());
+        }
+        //结束匹配
+        return true;
+      }
+    }
+    //上面没匹配上 有3种情况
+    //1. 还未成功匹配过route
+    //2. 调用了RoutingContext的fail方法
+    //3. 调用了reroute的方法
+    while (iter.hasNext()) { // Search for more handlers
+      RouteImpl route = iter.next();
+      //重置handler的index
+      currentRouteNextHandlerIndex.set(0);
+      currentRouteNextFailureHandlerIndex.set(0);
+      try {
+        //matches方法是比较重要的方法 上面已经重点分析了
+        if (route.matches(this, mountPoint(), failed)) {
+          try {
+            //设置RoutingContext当前route为刚匹配上的route
+            currentRoute = route;  
+            //匹配上route 调用相应的handler或failureHandler          
+            if (failed && currentRoute.hasNextFailureHandler(this)) {
+              currentRouteNextFailureHandlerIndex.incrementAndGet();
+              route.handleFailure(this);
+            } else if (currentRoute.hasNextContextHandler(this)) {
+              currentRouteNextHandlerIndex.incrementAndGet();
+              route.handleContext(this);
+            } else {
+              continue;
+            }
+          } catch (Throwable t) {
+            //这里跟上面的if分支一样  就不逼逼了
+            if (!failed) {
+              fail(t);
+            } else {
+              unhandledFailure(-1, t, route.router());
+            }
+          }
+          return true;
+        }
+      } catch (IllegalArgumentException e) {
+        unhandledFailure(400, e, route.router());
+        return true;
+      }
+    }
+    //while循环结束  匹配失败 调用checkHandleNoMatch
+    return false;
+  }
+至此  vert.x-web基本分析完了。建议上下结合看。因为有些重要的方法提前分析完了
+
+ 为了方便大家理解， 我要用我最擅长的蜜汁画画，画个图方便大家理解。
+
+算了，不画了。
+
+
+不只是什么画的画
+再来扯扯subRouter，即挂载路由的实现。
+
+subRouter也是通过route添加在到router容器中，这个route的path是/mountPoint*  
+
+即以/挂载路径开头的请求路径都会匹配上该route，由route进入到subRouter中。
+
+上面提到subRouter要调用了自身的handleContext或handleFailure方法，
+
+直接看关键代码。
+
+public void handleContext(RoutingContext ctx) {
+  new RoutingContextWrapper(getAndCheckRoutePath(ctx), ctx.request(), routes, ctx).next();
+}
+
+public class RoutingContextWrapper extends RoutingContextImplBase {
+  //一开始的RoutingContext 即1级RoutingContext
+  //这个RoutingContextWrapper 属于2级RoutingContext
+  protected final RoutingContext inner;
+  private final String mountPoint;
+
+  public RoutingContextWrapper(String mountPoint, HttpServerRequest request, 
+Set<RouteImpl> iter, RoutingContext inner) {
+    super(mountPoint, request, iter);
+    this.inner = inner;
+    //获取最初的RoutingContext的挂载点，默认是null 
+    //如果不为null的话，RoutingContextWrapper属于3级RoutingContext
+    String parentMountPoint = inner.mountPoint();
+    if (mountPoint.charAt(mountPoint.length() - 1) == '/') {
+      mountPoint = mountPoint.substring(0, mountPoint.length() - 1);
+    }
+    //拼接挂载点
+    this.mountPoint = parentMountPoint == null ? mountPoint : parentMountPoint + mountPoint;
+  }
+  //再看看RoutingContextWrapper的next方法， 跟RoutingContext差不多
+  public void next() {
+    //匹配逐一subRouter容器内的全部route  跟RoutingContext一样
+    if (!super.iterateNext()) {
+      //匹配失败时，再回到父router继续匹配 这里确实设计的很巧妙
+      //分析一下场景， 当subRouter调用它的容器内的route的handler发生异常时，
+      //而当前subRouter又没有设置关于异常的route
+      //此时又回到了父router。 所以为mainRouter设置一个关于异常的route即可。
+      inner.next();
+    }
+  }
+接着来扯扯大家经常遇到的疑问。
+
+ Router如何传到多个Verticle中？
+这个问题很简单， 上片分析过SharedData的LocalMap， 把Router存到LocalMap，然后在其他的Verticle再取出来。
+
+示例代码
+
+    //1. 在verticle1中
+    val localMap1 = sharedData.getLocalMap<String, Wrapper>("router")
+    val router = Router.router(vertx)
+    localMap1["router1"] = Wrapper(router)
+
+    //2. 在verticle2中
+    val localMap2 = sharedData.getLocalMap<String, Wrapper>("router")
+    val wrapper = localMap2["router1"]!!
+    val router1 = wrapper.router
+
+class Wrapper(val router: Router): Shareable
+其实这样传没啥意义， 因为当请求到来时， router还是在调用Router.accept方法所在的线程执行。分析完路由的整个过也没发现有关线程切换的代码吧？ 
+
+2. 要想多个请求都全部写在一个HttpServerVerticle很简单，有空扯扯这个吧。（此刻是想快点终结这篇文章了）
+
+总结：
+
+有个重要的问题忘了说， RoutingContext，Router，Route中的很多属性都是延迟初始化的。
+又不知道要总结啥了，我真的是不善于总结的人。
+源码基于vertx-web-3.5.1
+由于平时下班回到家要学习其他的，所以能做到周更就不错了。而且新工作也没有用vert.x，所以平时接触的vert.x就是业余时间自己玩玩了。当然如果深圳有vert.x的工作， 求内推，哈哈哈哈。
