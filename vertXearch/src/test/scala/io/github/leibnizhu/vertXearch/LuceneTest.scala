@@ -1,7 +1,8 @@
-package io.gitlab.leibnizhu.vertXearch
+package io.github.leibnizhu.vertXearch
 
-import io.gitlab.leibnizhu.vertXearch.engine.{Indexer, Searcher}
-import io.gitlab.leibnizhu.vertXearch.utils.Constants.{CONTENTS, ID, init}
+import io.github.leibnizhu.vertXearch.engine.{Indexer, Searcher}
+import io.github.leibnizhu.vertXearch.engine.{Indexer, Searcher}
+import io.github.leibnizhu.vertXearch.utils.Constants.{CONTENTS, ID, init}
 import io.vertx.scala.core.{Future, Vertx}
 import org.apache.lucene.document.Document
 import org.scalatest.FlatSpec
@@ -9,8 +10,8 @@ import org.slf4j.LoggerFactory
 
 class LuceneTest extends FlatSpec {
   private val log = LoggerFactory.getLogger(getClass)
-  val indexDir: String = "/Users/leibnizhu/workspace/vertx-cn-website/vertXearch/src/test/data/Index"
-  val dataDir: String = "/Users/leibnizhu/workspace/vertx-cn-website/vertXearch/src/test/data/Articles"
+  val indexDir: String = "src/test/data/Index"
+  val dataDir: String = "src/test/data/Articles"
   var indexer: Indexer = _
   var searcher: Searcher = _
 

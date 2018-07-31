@@ -1,8 +1,8 @@
 {
   /*索引存放位置*/
-  "indexPath": "/Users/leibnizhu/workspace/vertx-cn-website/vertXearch/src/test/data/Index",
+  "indexPath": "src/test/data/Index",
   /*文章原始文件位置*/
-  "articlePath": "/Users/leibnizhu/workspace/vertx-cn-website/vertXearch/src/test/data/Articles",
+  "articlePath": "src/test/data/Articles",
   /*从articlePath更新索引的时间间隔,单位:秒*/
   "refreshIndexPerSecond": 60,
   /*服务端口*/

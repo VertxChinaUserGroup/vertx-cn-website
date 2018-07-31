@@ -1,8 +1,8 @@
-package io.gitlab.leibnizhu.vertXearch.utils
+package io.github.leibnizhu.vertXearch.utils
 
 import java.io.File
 
-import io.gitlab.leibnizhu.vertXearch.utils.Constants.{LINE_SEPARATOR, vertx}
+import Constants.{LINE_SEPARATOR, vertx}
 import io.vertx.core.buffer.Buffer
 import io.vertx.lang.scala.json.JsonObject
 import io.vertx.scala.core.Future
@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 
-case class Article(id: String, title: String, author: String, content: String) extends Serializable {
+case class Article(id: String, content: String) extends Serializable {
   /**
     * 将Article对象写入到文件,目录由配置文件指定
     *
@@ -19,14 +19,14 @@ case class Article(id: String, title: String, author: String, content: String) e
     */
   def writeToFile(callback: Try[Unit] => Unit): Unit = {
     val fileName = Constants.articlePath + "/" + this.id + ".txt"
-    val fileContent = this.title + LINE_SEPARATOR + this.author + LINE_SEPARATOR + this.content
+    val fileContent = this.content
     Constants.vertx.fileSystem().writeFileFuture(fileName, Buffer.buffer(fileContent)).onComplete(callback)
   }
 
   def toJsonObject: JsonObject = new JsonObject()
-      .put("id", this.id).put("title", this.title).put("author", this.author).put("content", this.content)
+      .put("id", this.id).put("content", this.content)
 
-  def toLowerCase: Article = Article(this.id.toLowerCase, this.title.toLowerCase, this.author.toLowerCase, this.content.toLowerCase)
+  def toLowerCase: Article = Article(this.id.toLowerCase, this.content.toLowerCase)
 }
 
 object Article {
@@ -60,13 +60,13 @@ object Article {
   def apply(file: File, buffer: Buffer): Article = {
     val filename = file.getName
     val id = filename.substring(0, filename.lastIndexOf('.'))
-    val fileContent = buffer.toString()
-    val fistLineIndex = fileContent.indexOf(LINE_SEPARATOR)
-    val title = fileContent.substring(0, fistLineIndex)
-    val secondLineIndex = fileContent.indexOf(LINE_SEPARATOR, fistLineIndex + LINE_SEPARATOR.length)
-    val author = fileContent.substring(fistLineIndex + LINE_SEPARATOR.length, secondLineIndex)
-    val content = fileContent.substring(secondLineIndex + LINE_SEPARATOR.length)
+    val fileContent = buffer.toString() //2018.07.30 提高通用性,不拆分文件内容了,直接做索引
+//    val fistLineIndex = fileContent.indexOf(LINE_SEPARATOR)
+//    val title = fileContent.substring(0, fistLineIndex)
+//    val secondLineIndex = fileContent.indexOf(LINE_SEPARATOR, fistLineIndex + LINE_SEPARATOR.length)
+//    val author = fileContent.substring(fistLineIndex + LINE_SEPARATOR.length, secondLineIndex)
+//    val content = fileContent.substring(secondLineIndex + LINE_SEPARATOR.length)
     //HanLp区分大小写，所以全转小写
-    Article(id, title.toLowerCase, author.toLowerCase, content.toLowerCase)
+    Article(id, fileContent.toLowerCase)
   }
 }

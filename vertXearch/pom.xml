@@ -2,7 +2,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>io.gitlab.leibnizhu</groupId>
+    <groupId>io.github.leibnizhu</groupId>
     <artifactId>vertXearch</artifactId>
     <version>0.0.1</version>
 
@@ -17,14 +17,53 @@
         <vertx.version>3.5.1</vertx.version>
         <slf4j.version>1.7.24</slf4j.version>
         <logback.version>1.1.11</logback.version>
+        <java.version>1.8</java.version>
+        <javadoc.version>8</javadoc.version>
+        <compiler-plugin.version>3.6.2</compiler-plugin.version>
+        <war-plugin.version>3.1.0</war-plugin.version>
+        <clean-plugin.version>3.0.0</clean-plugin.version>
+        <resources-plugin.version>3.0.2</resources-plugin.version>
+        <surefire-plugin.version>2.21.0</surefire-plugin.version>
+        <jar-plugin.version>3.0.2</jar-plugin.version>
+        <source-plugin.version>3.0.1</source-plugin.version>
+        <javadoc-plugin.version>2.9.1</javadoc-plugin.version>
+        <gpg-plugin.version>1.5</gpg-plugin.version>
     </properties>
 
-    <repositories>
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <tag>master</tag>
+        <url>https://github.com/Leibnizhu/vertXearch</url>
+        <connection>scm:git:git@github.com:Leibnizhu/vertXearch.git</connection>
+        <developerConnection>scm:git:git@github.com:Leibnizhu/vertXearch.git</developerConnection>
+    </scm>
+
+    <distributionManagement>
         <repository>
-            <id>aliyun</id>
-            <url>http://maven.aliyun.com/nexus/content/groups/public</url>
+            <id>oss</id>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
         </repository>
-    </repositories>
+        <snapshotRepository>
+            <id>oss</id>
+            <uniqueVersion>false</uniqueVersion>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+    <developers>
+        <developer>
+            <id>Leibniz007</id>
+            <name>Leibniz</name>
+            <email>Leibnizhu@gmail.com</email>
+        </developer>
+    </developers>
 
     <dependencies>
         <dependency>
@@ -80,8 +119,74 @@
             <version>${scala-test.version}</version>
             <scope>test</scope>
         </dependency>
-
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${source-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <attach>true</attach>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${javadoc-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <links>
+                                <link>
+                                    http://docs.oracle.com/javase/${javadoc.version}/docs/api
+                                </link>
+                            </links>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${gpg-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <phase>install</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <distributionManagement>
+                <repository>
+                    <id>oss</id>
+                    <url>
+                        https://oss.sonatype.org/service/local/staging/deploy/maven2/
+                    </url>
+                </repository>
+            </distributionManagement>
+        </profile>
+    </profiles>
 
     <build>
         <resources>
@@ -129,18 +234,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
             <!-- 打包jar，MANIFEST.MF中包含Class-Path和Main-Class配置 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -156,8 +249,8 @@
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <manifestEntries>
-                                        <Main-Class>io.gitlab.leibnizhu.vertXearch.MainLauncher</Main-Class>
-                                        <Main-Verticle>io.gitlab.leibnizhu.vertXearch.verticle.HttpSearchVerticle</Main-Verticle>
+                                        <Main-Class>io.github.leibnizhu.vertXearch.MainLauncher</Main-Class>
+                                        <Main-Verticle>io.github.leibnizhu.vertXearch.verticle.HttpSearchVerticle</Main-Verticle>
                                     </manifestEntries>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
@@ -210,6 +303,84 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${jar-plugin.version}</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <configuration>
+                    <warName>spring-boot-starter-netty</warName>
+                    <failOnMissingWebXml>false</failOnMissingWebXml>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>${clean-plugin.version}</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>${resources-plugin.version}</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire-plugin.version}</version>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>${javadoc-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <charset>UTF-8</charset>
+                    <additionalparam>-Xdoclint:none</additionalparam>
+                </configuration>
             </plugin>
         </plugins>
     </build>

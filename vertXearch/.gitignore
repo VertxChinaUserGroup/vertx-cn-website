@@ -35,3 +35,6 @@ src/test/data/Articles/10.txt
 gradle/
 bin/
 out/
+
+gradlew
+gradlew.bat

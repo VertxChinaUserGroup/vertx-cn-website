@@ -1,11 +1,13 @@
-package io.gitlab.leibnizhu.vertXearch.verticle
+package io.github.leibnizhu.vertXearch.verticle
 
-import io.gitlab.leibnizhu.vertXearch.engine.{Engine, EngineImpl}
-import io.gitlab.leibnizhu.vertXearch.utils.Constants.{articlePath, indexPath}
-import io.gitlab.leibnizhu.vertXearch.utils.EventbusRequestUtil.Method.{ADD_ARTICLE, SEARCH}
-import io.gitlab.leibnizhu.vertXearch.utils.EventbusRequestUtil._
-import io.gitlab.leibnizhu.vertXearch.utils.ResponseUtil.{failSearch, successSearch}
-import io.gitlab.leibnizhu.vertXearch.utils.{Article, Constants, EventbusRequestUtil}
+import io.github.leibnizhu.vertXearch.engine.{Engine, EngineImpl}
+import io.github.leibnizhu.vertXearch.utils.{Article, Constants, EventbusRequestUtil}
+import io.github.leibnizhu.vertXearch.engine.{Engine, EngineImpl}
+import io.github.leibnizhu.vertXearch.utils.Constants.{articlePath, indexPath}
+import io.github.leibnizhu.vertXearch.utils.EventbusRequestUtil.Method.{ADD_ARTICLE, SEARCH}
+import io.github.leibnizhu.vertXearch.utils.EventbusRequestUtil._
+import io.github.leibnizhu.vertXearch.utils.ResponseUtil.{failSearch, successSearch}
+import io.github.leibnizhu.vertXearch.utils.{Article, Constants, EventbusRequestUtil}
 import io.vertx.core.json.JsonObject
 import io.vertx.lang.scala.ScalaVerticle
 import io.vertx.scala.core.Future
