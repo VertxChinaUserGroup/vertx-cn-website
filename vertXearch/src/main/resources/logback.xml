@@ -28,7 +28,7 @@
         <appender-ref ref="FILE"/>
     </root>
 
-    <logger name="io.gitlab.leibnizhu.vertXearch">
+    <logger name="io.github.leibnizhu.vertXearch">
         <level value="DEBUG" />
     </logger>
 

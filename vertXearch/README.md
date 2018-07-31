@@ -5,8 +5,8 @@
 第一期:Vert.X+Lucene+HanLP,快速构建  
 第二期:考虑使用Vert.X改造Lucene,提高性能  
 目前项目提供了两个Verticle:  
-- `io.gitlab.leibnizhu.vertXearch.verticle.HttpSearchVerticle`: 提供http查询接口, 默认监听8083端口
-- `io.gitlab.leibnizhu.vertXearch.verticle.EventbusSearchVerticle`: 提供Eventbus查询接口, 默认监听地址为`"search"`
+- `io.github.leibnizhu.vertXearch.verticle.HttpSearchVerticle`: 提供http查询接口, 默认监听8083端口
+- `io.github.leibnizhu.vertXearch.verticle.EventbusSearchVerticle`: 提供Eventbus查询接口, 默认监听地址为`"search"`
 
 默认的打包配置里使用http查询接口的Verricle.  
 
@@ -28,9 +28,9 @@ gradle
 ```json
 {
   /*索引存放位置*/
-  "indexPath":"/Users/leibnizhu/Desktop/Index",
+  "indexPath": "src/test/data/Index",
   /*文章原始文件位置*/
-  "articlePath":"/Users/leibnizhu/Desktop/Data",
+  "articlePath": "src/test/data/Articles",
   /*从articlePath更新索引的时间间隔,单位:秒*/
   "refreshIndexPerSecond": 10,
   /*服务端口*/
@@ -43,6 +43,7 @@ gradle
   "keywordPostTag":"</font>"
 }
 ```
+**注**: 文章使用纯文本文件(后缀为`.txt`), 文件名(不含后缀)为文章ID, 文件内容全部当做文章内容并全做做索引
 
 ### 启动
 默认配置的main类是用于启动http查询接口的,如果要启动eventbus查询接口的,请自行deploy.  
@@ -106,15 +107,15 @@ java -jar target/lib/vertXearch-0.0.1-fat.jar /path/to/config.json
 ```
 
 ### Eventbus查询接口
-- 地址: 默认是`"search"`, 可以通过配置文件修改,详见`修改配置文件`小节
-- 请求格式: 接收`JsonObject`对象,格式如下:  
+- 地址: 默认是`"search"`, 可以通过配置文件修改,详见[`修改配置文件`](#修改配置文件)小节
+- 请求格式: 接收`JsonObject`对象,格式如下:  
 
 ```json
 {
   "method" : "search",
   "content": {
     "keyword": "搜索关键词",
-    "length": "搜索结果最大条数,正整数,选填"
+    "length": "搜索结果最大条数,正整数,选填"
   }
 }
 ```
