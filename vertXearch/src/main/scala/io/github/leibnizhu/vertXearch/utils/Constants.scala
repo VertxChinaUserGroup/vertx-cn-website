@@ -1,4 +1,4 @@
-package io.gitlab.leibnizhu.vertXearch
+package io.github.leibnizhu.vertXearch.utils
 
 import java.io.File
 
@@ -28,8 +28,8 @@ object Constants {
     * Lucene文档(Document)中的key,基本不用动
     */
   val ID: String = "id" //文章ID key
-  val TITLE: String = "title" //文章标题key
-  val AUTHOR: String = "author" //文章作者key
+  //  val TITLE: String = "title" //文章标题key
+  //  val AUTHOR: String = "author" //文章作者key
   val CONTENTS: String = "contents" //文章内容key
 
   /**

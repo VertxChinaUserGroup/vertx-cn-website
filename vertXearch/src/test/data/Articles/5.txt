@@ -1,0 +1,259 @@
+Vert.x 微服务架构下实现 MDC Logging 的解决方案（支持 Kotlin Coroutine）
+李飘柔
+1、背景
+在微服务架构的业务系统里，traceId(也称为requestId/correlationId) 在调用链追踪与线上排错过程中扮演着重要角色。traceId 可以串联起多个松散耦合的服务调用链，也可以聚合单一服务内某次请求的所有相关日志信息。这样我们就需要为日志附加 traceId 信息。
+
+为了将 traceId 信息附加在日志里，在传统 J2EE 框架下可以通过 MDC logging 来做到 traceId 记录。相比于简单粗暴的层层传参，MDC logging 有两个显著的优点：
+
+对业务代码无侵入
+规范统一日志格式
+但在 Vert.x 框架中，集成 MDC logging 并不是一件顺滑的事情。
+
+2、MDC 的局限性
+在传统 J2EE 框架里，每个请求都有一个专门的线程来完成，也就是说这个线程会自始至终负责整个 request-response 的执行周期。MDC 功能依赖于线程的 ThreadLocal 变量，只要在 filter拦截器/middleware 里稍加配置，在请求进入时生成一个 traceId 然后通过 MDC 的接口写入当前线程的 ThreadLocal变量。这样在整个请求的过程中，由于线程不变，logger 可以随时拿到相对应的 traceId 进行日志记录。
+
+在 Vert.x 里，线程模型与传统的多线程/线程池模型有显著地区别:
+
+
+简单来说，Vert.x 使用 EventLoop 模型，为了不阻塞 EventLoop,  在涉及到 IO 事件、定时器事件等场景时需要写一个 Handler<E> 类型的回调函数。Handler<E> 是一个函数接口(FunctionalInterface), 在 Kotlin 和 Java 8 里面经常以 lambda 的形态出现。在使用 http-client, 各种 db-client, eventbus.send() 与 context.executeBlocking() 等位置时会遇到这个类型的参数。在程序执行过程中，这些 Handler 会被封装成 Runnable 对象，通过 TaskQueue 提交给 EventLoop 进行处理。问题就出现在这里，所有的 Handler都会被单一的 EventLoop 线程执行。
+
+线程模型的变化暴露出 MDC logging 的设计局限：MDC logging 能正常工作的前提是假设相同的线程独占请求的整个生命周期。在 Vert.x 这类异步系统里，这个前提是不存在的。没有线程变量可以作为依赖能够让 logger 获知跟随完整的请求调用链。
+
+有人会想到，既然只有一个单一线程，那利用时间序，在请求排队执行的过程的起始位置，去进行 MDC.put() 是否可以？
+
+答案也是不行。虽然这些 Handler 在提交到 TaskQueue 时是有序的，但是他们经过 EventLoop 的分发后，Hander 的执行与它对应的原请求逻辑的执行已经从时间上被割裂开来。某个请求里提交的 Handler 很可能会在另一个不同请求的逻辑之前或之后才执行。导致 MDC 里的值被错误的覆盖。
+
+以代码为例阐述这种情形，假设我们有一个 Restful 接口，替用户取回某只股票的行情信息：
+
+override suspend fun call(context: RoutingContext): SillyResponse {
+    try {
+        MDC.put("TRACE_ID", context.getCurrentTraceId())
+        val quoteResult = quoteCli.getQuote("sh600030").await()
+        return SillyResponse(200, QuoteResponse(quoteResult))
+    } catch (err: Exception) {
+        return SillyResponse(500)
+    }
+}
+在路由的逻辑里，后台服务会通过发 HTTP 请求从新浪的股票 API 里获取行情
+
+fun getQuote(stockCode: String): Future<String> {
+
+    val future = Future.future<String>()
+
+    client.getAbs("$baseUrl/list=$stockCode")
+            .timeout(timeout)
+            .send {
+                if (it.succeeded()) {
+                    val response = it.result()
+                    val result = when (response.statusCode()) {
+                        200 -> {
+                            logger.info("成功获取行情信息...")
+                            response.bodyAsString("GBK")
+                        }
+                        else -> "error occur not 200!"
+                    }
+                    future.complete(result)
+                } else {
+                    future.complete(it.cause().message)
+                }
+            }
+    return future
+}
+在执行过程中，代码会先执行到 quoteCli.getQuote("sh600030") 紧接着在 getQuote 函数里，调用 send 的时刻，将send 的参数（包括花括号的一整个 lambda 字面量）提交到 EventLoop.
+
+但是在多个请求并发的时候，有可能当前第 11 个请求执行完 MDC.put 这两句，紧接着开始执行第9个请求所提交的 Handler 回调。那么在回调函数里的 logger 从 MDC 里取到的显然就是错误的值（MDC 已经被后续请求覆盖）。
+
+如果回落到层层传参的方式，在 Vert.x 的语境下，可以用 RoutingContext 来记录 traceId（其实任意对象都可以），由 controller 传参到 service 再传参到 dao 层。这种方案的缺点显而易见：层层传参的方式将框架逻辑侵入到业务层，需要所有开发人员感知，不仅引入额外工作量，而且让业务方法的意义变得不纯粹。
+
+3、方案分析与 wrapper 改造
+在事先知道哪些调用会导致执行上下文被切换的情况下，可以构造一个 wrapper 函数，wrapper 函数的用途是：1）声明 Handler 时捕获当前线程的外部变量，然后送入 Handler(lambda) 里面。2）执行时取出外部变量，通过MDC 的接口写入当前线程的 ThreadLocal. 这一块利用到闭包的基础知识。
+
+接下来开始动手进行代码改造，只要注意到第二行的执行发生在 wrapper 被调用时，这时我们还位于原线程内。Handler 后面的花括号体里面声明的语句在未来执行，到那时线程已经被切换。
+
+inline fun <E> traceable(crossinline transform: (E) -> Unit): Handler<E> {
+    val traceId = MDC.get(TRACE_ID_CTX_KEY)
+    return Handler {
+        MDC.put(TRACE_ID_CTX_KEY, traceId)
+        transform(it)
+    }
+}
+4、中间件改造 -- middleware handler
+接下来是比较基础的一步，思路很简单：通过 middleware 提取 upstream 服务的 traceId
+
+作为请求的接入层，首先要获取上游请求携带的 traceId (Line8)
+
+如果自己就是最上游服务或 Gateway 服务，当请求没有携带 traceId 时，可以选择就地生成一个 traceId (Line8)。
+
+然后将获取到或者新生成的 traceId 通过 MDC 接口存入当前线程的 ThreadLocal 里(Line9). 
+
+// 约定 traceId 在 requestHeader 里的 key 名称
+const val TRACE_ID_HEADER_KEY: String = "x-trace-id"
+// 约定 traceId 在系统里各种上下文对象的 key 名称
+const val TRACE_ID_CTX_KEY: String = "TRACE_ID"
+
+class TraceIdHandler : Handler<RoutingContext> {
+    override fun handle(ctx: RoutingContext) {
+        val traceId = ctx.request().getHeader(TRACE_ID_HEADER_KEY) ?: UUID.randomUUID().toString()
+        MDC.put(TRACE_ID_CTX_KEY, traceId)
+        ctx.next()
+    }
+}
+
+
+最后，将这个中间件配置在 Router 里，要放在业务路由的前面：
+
+val router = Router.router(vertx)
+// 配置其他中间件 handler 略
+router.route().handler(TraceIdHandler())
+// 配置业务路由的 handler 略
+return router
+
+
+5、收尾工作 -- 请求传递与 wrapper 的使用
+完成以上步骤后，请求在进入 Vert.x 的路由后，一个 TraceId 就会写入处理当前请求的线程变量，logger 可以通过 MDC 机制获取到 traceId，输出到日志里。后面只要保证在构建 Handler 对象时，用上述的 wrapper 函数包装一下 lambda 即可。
+
+还有一些收尾工作。在服务间互相调用 RPC 时，需要服务间传递当前的 traceId. 以 HTTP 请求为例，这里利用 Kotlin Extension 语法，为本服务发出的下游请求通通附上 traceId:
+
+fun <T> HttpRequest<T>.withTrace(): HttpRequest<T> {
+    return this.putHeader(TRACE_ID_HEADER_KEY, MDC.get(TRACE_ID_CTX_KEY))
+}
+最后，一个完整的 HTTP 调用示例如下：
+
+class DemoHttpClient @Inject constructor(private val client: WebClient) {
+    private val logger = LoggerFactory.getLogger("DemoHttpClient")
+    fun getQuote(stockCode: String): Future<String> {
+        val future = Future.future<String>()
+        client.getAbs("http://hq.sinajs.cn/list=$stockCode")
+                .withTrace()
+                .timeout(3000)
+                .send(traceable {
+                    if (it.succeeded()) {
+                        val response = it.result()
+                        val result = when (response.statusCode()) {
+                            200 -> {
+                                logger.info("成功获取股票行情信息...")
+                                response.bodyAsString("GBK")
+                            }
+                            else -> "error occur not 200!"
+                        }
+                        future.complete(result)
+                    } else {
+                        future.complete(it.cause().message)
+                    }
+                })
+        return future
+    }
+}
+
+
+6、Vert.x 的异步机制与 Kotlin Coroutine
+接下来扯点附加话题，在 Vert.x 里有这样四种处理异步的机制:
+
+callback
+io.vertx.core.Future
+RxJava
+Kotlin Coroutine
+前两种由 vertx.core 原生提供。首先由于 callback hell 的原因，任何时候都不建议使用第一种写法。第二种 Future 类型可以借助 compose 操作符，将原本嵌套回调的逻辑写成一个线性化回调的表达。
+
+后两种机制属于 ext 包提供的高阶功能。Rx 对于 Android 工程师来说应该再熟悉不过了。抛开更加丰富的操作符(高阶函数)和额外支持连续事件发射的 Observable/Flowable 不谈，在大多数譬如 Http 请求的场景下，Rx 的写法与 Future 是趋同的 (flatMap vs compose    Single<T> vs  Future<T>). 偶尔在表达复杂的异步组合嵌套分支等场景时，使用 Future 或 Rx 表达逻辑也是件有挑战的事情。
+
+这里还有最后一种机制 -- Kotlin Coroutine. 得益于 Coroutine 的 high level API，在面对异步调用时，可以把闭包、回调、Rx 等概念和用法通通抛于脑后。就像写同步程序一样用 if-else 表达分支, 用 try-catch 处理异常。将代码完全变成最原始的同步线性表达
+
+
+综上原因，在我司的开发规范中，建议开发人员一律使用 Kotlin Coroutine 的方式书写处理逻辑。
+
+回归主题，在之前的改造步骤里，wrap Handler 的思路已经可以 cover 到 callback, Future<T>与 Rx 三种情况。但是 Kotlin Coroutine 的引入使得情形更复杂化了。举个例子(伪代码)：
+
+fun handleLogin(userId: String, pwd: String) {
+    val userIdAfterTrim = userId.trim()
+    webClient.registerTokenCallback(userIdAfterTrim, traceable { 
+        token -> {
+            Thread.sleep(2000)
+            ctx.response.end(token)
+        }
+    })
+    logger.info("已获取token")
+}
+在上面一段示例里，handleLogin 函数体的三行函数调用都是在同一时间连续执行完成的。在这个时间段内，MDC 里还是正确的值。而由于 wrapper 的存在，我们提交的 lambda 字面量也会在未来执行时，将 MDC 里存储的 traceId 正确覆盖。
+
+接下来把代码修改成等价的 coroutine 的形式:
+
+suspend fun handleLogin(userId: String, pwd: String) {
+    val userIdAfterTrim = userId.trim()
+    val token = webClient.registerTokenSuspend(userIdAfterTrim) // suspend
+    delay(2000L) // suspend
+    ctx.response.end(token)
+    logger.info("已获取token")
+}
+在 Vert.x 里， CoroutineDispatcher 是由 vertx-lang-kotlin-coroutines lib 提供的适配。在上面代码里，每一处 suspend 函数的调用，所对应的 continuation 还是要回归 EventLoop 重新派发。Coroutine 引入的问题跟之前 Handler 引入的问题原理是相似的：和之前 Handler 的执行一样，suspend 函数的调用点，也同样割裂了正常逻辑与 continuation 逻辑的执行时机。
+
+7、支持 Kotlin Coroutine
+之前有分析到，如果想达成 MDC logging 的效果，需要有一个用于存储数据的变量能跟踪并覆盖一个请求的生命周期。在传统 J2EE 开发里，这个角色是线程/ThreadLocal。在 Coroutine 的语境下，CoroutineContext 可以作为 ThreadLocal 的一个替代。
+
+对于 Vert.x-Web 来说，启动 Coroutine 的时机是在业务路由的部分。这样对于每个请求，都有一个 Coroutine 完整的跟随整个请求执行全程。所以我们可以利用这个负责单一请求的 Coroutine 所对应的 CoroutineContext 来记录传递 traceId 信息。这里要留意两点前提:
+
+logging 类库的 MDC 从线程 ThreadLocal 里获取数据
+Coroutine 在执行时是依托于一个具体线程
+我们的方案思路是，实现一个自定义的 CoroutineContext 用于存储 traceId. 在这个 Coroutine 被调度器 resume 时，将当前 Coroutine 对应的 CoroutineContext 里面所存储的 traceId 变量，通过 MDC 的接口来直接写入这个 Coroutine 所绑定/对应线程的 ThreadLocal. 这样这个 Coroutine 所 cover 的逻辑里，logger 都能从 MDC 获取到正确的 traceId.
+
+（是不是有点绕✧(≖ ◡ ≖✿)）
+
+首先，需要在 Coroutine 被调度时，做一个拦截。这里需要动用到 Kotlin Coroutine 的 low level API. 官方 Kotlin Coroutine 的 API 当中提供了 ContinuationInterceptor 接口，它是一个拦截器，可以把对协程的操作拦截，传入的是原始的 Continuation，返回的我们 wrap 之后的 Continuation，这样就可以实现我们的目的了。
+
+这样，利用 ContinuationInterceptor 接口实现一个自定义的 CoroutineContext，它额外存储一个 traceId，每当 Coroutine 被 resume 时，将持有的 traceId 通过 MDC 写入当前线程. 代码如下： (感谢评论区 @金阳阳 提醒，这里的逻辑可以简化）
+
+import org.slf4j.MDC
+import kotlin.coroutines.experimental.AbstractCoroutineContextElement
+import kotlin.coroutines.experimental.Continuation
+import kotlin.coroutines.experimental.ContinuationInterceptor
+import kotlin.coroutines.experimental.CoroutineContext
+
+const val TRACE_ID_CTX_KEY: String = "TRACE_ID"
+
+class TraceableCoroutineContext(private val traceId: String,
+                                private val dispatcher: ContinuationInterceptor
+) : AbstractCoroutineContextElement(ContinuationInterceptor), ContinuationInterceptor {
+
+    override fun <T> interceptContinuation(continuation: Continuation<T>): Continuation<T> =
+            dispatcher.interceptContinuation(Wrapper(continuation))
+
+    inner class Wrapper<in T>(private val continuation: Continuation<T>) : Continuation<T> {
+        private inline fun wrap(block: () -> Unit) {
+            MDC.put(TRACE_ID_CTX_KEY, traceId)
+            block()
+        }
+        override val context: CoroutineContext get() = continuation.context
+        override fun resume(value: T) = wrap { continuation.resume(value) }
+        override fun resumeWithException(exception: Throwable) = wrap { continuation.resumeWithException(exception) }
+    }
+}
+最后一点就是 Coroutine Builder 的调用示例，脚手架里我选择通过让业务路由的 Handler 继承 AbstractCoroutineHandler 来获得使用 Coroutine 的能力。在 AbstractCoroutineHandler 的实现里，仅需把 launch 的参数由原来的 VertxDispatcher 换成我们包装后的 CoroutineContext 即可。示例如下：
+
+import io.vertx.core.Handler
+import io.vertx.core.logging.LoggerFactory
+import io.vertx.ext.web.RoutingContext
+import io.vertx.kotlin.coroutines.dispatcher
+import kotlinx.coroutines.experimental.launch
+
+abstract class AbstractCoroutineHandler : Handler<RoutingContext> {
+
+    abstract suspend fun call(context: RoutingContext): CommonResponse
+
+    override fun handle(ctx: RoutingContext) {
+        val traceId = MDC.get(TRACE_ID_CTX_KEY)
+        launch(TraceableCoroutineContext(traceId, ctx.vertx().dispatcher())) {
+            try {
+                val respDTO = call(ctx)
+                val response = ctx.response()
+                response.statusCode = respDTO.status
+                respDTO.header?.let { it.forEach { k, v -> response.putHeader(k, v) } }
+                response.end(respDTO.toString())
+            } catch (e: Exception) {
+                ctx.response().setStatusCode(500).end()
+            }
+        }
+    }
+}
+
+
+综合上述改造，可以在以 Vert.x 为基础的微服务架构中，实现出一套完整的 MDC logging 方案。该方案具有较低的业务侵入性，仅需调用高阶函数 traceable 去包装 lambda, 也可以进一步选择在脚手架层，通过重新实现这些会导致线程切换的 API 做到对业务代码的零侵入。

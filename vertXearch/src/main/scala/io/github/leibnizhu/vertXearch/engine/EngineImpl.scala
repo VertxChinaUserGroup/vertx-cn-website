@@ -1,9 +1,9 @@
-package io.gitlab.leibnizhu.vertXearch
-
+package io.github.leibnizhu.vertXearch.engine
 
 import java.io.File
 
-import io.gitlab.leibnizhu.vertXearch.Constants._
+import io.github.leibnizhu.vertXearch.utils.Article
+import io.github.leibnizhu.vertXearch.utils.Constants._
 import io.vertx.core.buffer.Buffer
 import io.vertx.scala.core.Future
 import org.apache.lucene.search.highlight._
@@ -110,7 +110,7 @@ class EngineImpl(indexPath: String, articlePath: String) extends Engine {
     val deleted = searcher.getAllDocuments //所有存活的文档
       .filter(doc => !vertx.fileSystem().existsBlocking(articlePath + doc.get(ID) + ".txt")) //过滤出文章文件不存在的
       .map(doc => {
-        log.info(s"发现文档(ID=${doc.get(ID)},标题=${doc.get(TITLE)})在文章目录中已被删除,准备从索引中同步删除...")
+        log.info(s"发现文档(ID=${doc.get(ID)})在文章目录中已被删除,准备从索引中同步删除...")
         indexer.deleteDocument(doc.get(ID))
       }).size
     if (deleted > 0) {
@@ -153,12 +153,12 @@ class EngineImpl(indexPath: String, articlePath: String) extends Engine {
       highlighter.setTextFragmenter(fragmenter)
       docs.map(doc => {
         //FIXME 网上说这里的.replaceAll("\\s*", "")是必须的，\r\n这样的空白字符会导致高亮标签错位,但实测好像并不影响
-        val content = doc.get(CONTENTS)//.replaceAll("\\s*", "")
-        val title = doc.get(TITLE)//.replaceAll("\\s*", "")
-        val author = doc.get(AUTHOR)//.replaceAll("\\s*", "")
+        //        val title = doc.get(TITLE)//.replaceAll("\\s*", "")
+        //        val author = doc.get(AUTHOR)//.replaceAll("\\s*", "")
+        val content = doc.get(CONTENTS) //.replaceAll("\\s*", "")
         Article(doc.get(ID), //以下三个都是尝试高亮,高亮失败则用原来的纯文本
-          Option(highlighter.getBestFragment(ANALYZER, TITLE, title)).getOrElse(title),
-          Option(highlighter.getBestFragment(ANALYZER, AUTHOR, author)).getOrElse(author),
+          //          Option(highlighter.getBestFragment(ANALYZER, TITLE, title)).getOrElse(title),
+          //          Option(highlighter.getBestFragment(ANALYZER, AUTHOR, author)).getOrElse(author),
           Option(highlighter.getBestFragment(ANALYZER, CONTENTS, content)).getOrElse(subContext(content)))
       })
     }), callback)

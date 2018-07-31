@@ -28,7 +28,13 @@ dist/
 nbdist/
 .nb-gradle/
 
-src/test/data/
+src/test/data/Index
+src/test/data/Articles/10.txt
 
 .gradle/
 gradle/
+bin/
+out/
+
+gradlew
+gradlew.bat

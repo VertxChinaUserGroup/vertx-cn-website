@@ -5,7 +5,7 @@ plugins {
     id 'maven'
 }
 
-group = 'io.gitlab.leibnizhu'
+group = 'io.github.leibnizhu'
 version = '0.0.1'
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
@@ -15,14 +15,9 @@ tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
 }
 
-repositories {
-    maven {
-        url "http://maven.aliyun.com/nexus/content/groups/public"
-    }
-}
-
 ext {
-    scala_version = '2.12.4'
+    scala_main_version = '2.12'
+    scala_sub_version = '4'
     scala_test_version = '3.0.5'
     lucene_version = '7.2.0'
     vertx_version = '3.5.1'
@@ -31,26 +26,26 @@ ext {
 }
 
 dependencies {
-    compile "org.scala-lang:scala-library:$scala_version"
-    compile "io.vertx:vertx-web-scala_2.12:$vertx_version"
-    compile "io.vertx:vertx-web-client-scala_2.12:$vertx_version"
+    compile "org.scala-lang:scala-library:$scala_main_version.$scala_sub_version"
+    compile "io.vertx:vertx-web-scala_$scala_main_version:$vertx_version"
+    compile "io.vertx:vertx-web-client-scala_$scala_main_version:$vertx_version"
     compile "org.slf4j:slf4j-api:$slf4j_version"
     compile "ch.qos.logback:logback-core:$logback_version"
     compile "ch.qos.logback:logback-classic:$logback_version"
     compile "com.hankcs.nlp:hanlp-lucene-plugin:1.1.3"
     compile "org.apache.lucene:lucene-highlighter:$lucene_version"
-    testCompile "org.scalatest:scalatest_2.12:$scala_test_version"
+    testCompile "org.scalatest:scalatest_$scala_main_version:$scala_test_version"
     testRuntime 'org.pegdown:pegdown:1.4.2'
 }
 
-defaultTasks 'clean', 'spec', 'customFatJar'
+defaultTasks 'clean', 'spec', 'jar', 'customFatJar'
 
 //打普通jar包
 jar {
     manifest {
         attributes 'Manifest-Version': 1.0,
-                'Main-Class': 'io.gitlab.leibnizhu.vertXearch.MainLauncher',
-                'Main-Verticle': 'io.gitlab.leibnizhu.vertXearch.MainVerticle'
+                'Main-Class': 'io.github.leibnizhu.vertXearch.MainLauncher',
+                'Main-Verticle': 'io.github.leibnizhu.vertXearch.verticle.HttpSearchVerticle'
     }
 }
 
@@ -58,8 +53,8 @@ jar {
 task customFatJar(type: Jar) {
     manifest {
         attributes 'Manifest-Version': 1.0,
-                'Main-Class': 'io.gitlab.leibnizhu.vertXearch.MainLauncher',
-                'Main-Verticle': 'io.gitlab.leibnizhu.vertXearch.MainVerticle'
+                'Main-Class': 'io.github.leibnizhu.vertXearch.MainLauncher',
+                'Main-Verticle': 'io.github.leibnizhu.vertXearch.verticle.HttpSearchVerticle'
     }
     classifier = 'fat'
     from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
@@ -68,6 +63,6 @@ task customFatJar(type: Jar) {
 
 task spec(dependsOn: ['testClasses'], type: JavaExec) {
     main = 'org.scalatest.tools.Runner'
-    args = ['-R', 'build/classes/scala/test', '-o']
+    args = ['-R', 'target/classes/scala/test', '-o']
     classpath = sourceSets.test.runtimeClasspath
 }
